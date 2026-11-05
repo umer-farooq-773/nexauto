@@ -1,0 +1,915 @@
+/********** Template CSS **********/
+:root {
+  --primary: #0b3d91;
+  --light: #f3f6f9;
+  --dark: #191c24;
+}
+
+.btn-primary {
+    color: #000;
+    background-color: #0b3d91 !important;
+    border-color: #0b3d91 !important;
+}
+
+.text-primary{
+  color: #0b3d91 !important;
+}
+
+.back-to-top {
+  position: fixed;
+  display: none;
+  right: 45px;
+  bottom: 45px;
+  z-index: 99;
+}
+
+/*** Spinner ***/
+#spinner {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s ease-out,
+    visibility 0s linear 0.5s;
+  z-index: 99999;
+}
+
+#spinner.show {
+  transition:
+    opacity 0.5s ease-out,
+    visibility 0s linear 0s;
+  visibility: visible;
+  opacity: 1;
+}
+
+.passwordToggler{
+    cursor:pointer;
+}
+.password-field input{
+    padding-right:40px;
+}
+
+
+/*** Button ***/
+.btn {
+  transition: 0.5s;
+}
+
+.btn.btn-primary {
+  color: #ffffff;
+}
+
+.btn-square {
+  width: 38px;
+  height: 38px;
+}
+
+.btn-sm-square {
+  width: 32px;
+  height: 32px;
+}
+
+.btn-lg-square {
+  width: 48px;
+  height: 48px;
+}
+
+.btn-square,
+.btn-sm-square,
+.btn-lg-square {
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: normal;
+  border-radius: 50px;
+}
+
+/*auth logo */
+.logo-img {
+  height: 50px;
+}
+
+.vms-brand {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+/*** Layout ***/
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--light);
+  transition: 0.5s;
+  z-index: 999;
+}
+
+.content {
+  margin-left: 260px;
+  min-height: 100vh;
+  background: #ffffff;
+  transition: 0.5s;
+}
+
+@media (min-width: 992px) {
+  .sidebar {
+    margin-left: 0;
+  }
+
+  .sidebar.open {
+    margin-left: -260px;
+  }
+
+  .content {
+    width: calc(100% - 260px);
+  }
+
+  .content.open {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .sidebar {
+    margin-left: -260px;
+  }
+
+  .sidebar.open {
+    margin-left: 0;
+  }
+
+  .content {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/*** Navbar ***/
+.sidebar .navbar .navbar-nav .nav-link {
+  padding: 7px 5px;
+  color: var(--dark);
+  font-weight: 500;
+  border-left: 3px solid var(--light);
+  border-radius: 0 30px 30px 0;
+  outline: none;
+}
+
+.sidebar .navbar .navbar-nav .nav-link:hover,
+.sidebar .navbar .navbar-nav .nav-link.active {
+  color: var(--primary);
+  background: #ffffff;
+  border-color: var(--primary);
+}
+
+.sidebar .navbar .navbar-nav .nav-link i {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 40px;
+}
+
+.sidebar .navbar .navbar-nav .nav-link:hover i,
+.sidebar .navbar .navbar-nav .nav-link.active i {
+  background: var(--light);
+}
+
+.sidebar .navbar .dropdown-toggle::after {
+  position: absolute;
+  top: 15px;
+  right: 8px;
+  border: none;
+  content: "\f107";
+  font-family: "Font Awesome 5 Free";
+  font-weight: 900;
+  transition: 0.5s;
+}
+
+.sidebar .navbar .dropdown-toggle[aria-expanded="true"]::after {
+  transform: rotate(-180deg);
+}
+
+.sidebar .navbar .dropdown-item {
+  padding-left: 25px;
+  border-radius: 0 30px 30px 0;
+
+}
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.50rem 1rem;
+    clear: both;
+    font-weight: 400;
+    color: #212529;
+    text-align: inherit;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+}
+
+.content .navbar .navbar-nav .nav-link {
+  margin-left: 25px;
+  padding: 12px 0;
+  color: var(--dark);
+  outline: none;
+}
+
+.content .navbar .navbar-nav .nav-link:hover,
+.content .navbar .navbar-nav .nav-link.active {
+  color: var(--primary) !important;
+}
+
+.content .navbar .sidebar-toggler,
+.content .navbar .navbar-nav .nav-link i {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #0b3d91;
+  border-radius: 40px;
+}
+
+.content .navbar .dropdown-toggle::after {
+  margin-left: 6px;
+  vertical-align: middle;
+  border: none;
+  content: "\f107";
+  font-family: "Font Awesome 5 Free";
+  font-weight: 900;
+  transition: 0.5s;
+}
+
+.content .navbar .dropdown-toggle[aria-expanded="true"]::after {
+  transform: rotate(-180deg);
+}
+
+.dropdown-item.active, .dropdown-item:active {
+    color: #fff;
+    text-decoration: none;
+    background-color: #0b3d91;
+}
+
+@media (max-width: 575.98px) {
+  .content .navbar .navbar-nav .nav-link {
+    margin-left: 15px;
+  }
+  .logo-img {
+    height: 40px;
+  }
+  
+}
+
+/*** Date Picker ***/
+.bootstrap-datetimepicker-widget.bottom {
+  top: auto !important;
+}
+
+.bootstrap-datetimepicker-widget .table * {
+  border-bottom-width: 0px;
+}
+
+.bootstrap-datetimepicker-widget .table th {
+  font-weight: 500;
+}
+
+.bootstrap-datetimepicker-widget.dropdown-menu {
+  padding: 10px;
+  border-radius: 2px;
+}
+
+.bootstrap-datetimepicker-widget table td.active,
+.bootstrap-datetimepicker-widget table td.active:hover {
+  background: var(--primary);
+}
+
+.bootstrap-datetimepicker-widget table td.today::before {
+  border-bottom-color: var(--primary);
+}
+
+/*** Testimonial ***/
+.progress .progress-bar {
+  width: 0px;
+  transition: 2s;
+}
+
+/*** Testimonial ***/
+.testimonial-carousel .owl-dots {
+  margin-top: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.testimonial-carousel .owl-dot {
+  position: relative;
+  display: inline-block;
+  margin: 0 5px;
+  width: 15px;
+  height: 15px;
+  border: 5px solid var(--primary);
+  border-radius: 15px;
+  transition: 0.5s;
+}
+
+.testimonial-carousel .owl-dot.active {
+  background: var(--dark);
+  border-color: var(--primary);
+}
+
+/* Table layout ko fix karein taake columns sync rahein */
+/* Table responsive container */
+.table-responsive {
+    width: 100%; 
+}
+
+.table-responsive table {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+/* Header styling */
+.table-responsive thead {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    position: sticky;
+    top: 0px;
+     background: #F3F6F9;   /* zaruri, warna scroll me rows dikhenge */
+    z-index: 10;
+}
+
+
+/* Tbody par scrollbar set karne ka main logic */
+.table-responsive tbody {
+    display: block;
+      
+    width: 100%;
+}
+
+.table-responsive tbody tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    background: #fff !important;
+}
+
+td .dropdown-toggle::after {
+    display: none !important;
+}
+
+
+
+/* Sorting Icons hatane ke liye (Jo aapne red mark kiye thay) */
+.table-responsive table.dataTable thead .sorting::before,
+.table-responsive table.dataTable thead .sorting::after,
+.table-responsive table.dataTable thead .sorting_asc::before,
+.table-responsive table.dataTable thead .sorting_asc::after,
+.table-responsive table.dataTable thead .sorting_desc::before,
+.table-responsive table.dataTable thead .sorting_desc::after {
+    display: none !important;
+}
+table.dataTable.no-footer {
+    border-bottom: 0px solid rgba(0, 0, 0, 0.3) !important;
+}
+
+.dataTables_wrapper .dataTables_filter {
+    float: right;
+    text-align: right;
+    margin-bottom: 10px !important;
+}
+
+/* Scrollbar ko patla (thin) karne ke liye taake red line ke andar fit lage */
+.table-responsive tbody::-webkit-scrollbar {
+    width: 6px;
+}
+.table-responsive tbody::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+
+/* Mobile Styles (Choti screens ke liye) */
+@media (max-width: 767px) {
+    .table-responsive {
+        overflow-x: auto; /* Horizontal scroll enable karne ke liye */
+    } 
+    .table-responsive table {
+        /* Mobile par table ko thoda wide rakhein taake user scroll kar sake */
+        min-width: 600px; 
+    }
+
+    /* Agar mobile par cells ka text chota karna ho */
+    .table-responsive th, 
+    .table-responsive td {
+        font-size: 14px;
+        padding: 8px 5px;
+    }
+
+
+  div.table-responsive
+    > div.dataTables_wrapper
+    > div.row
+    > div[class^="col-"]:first-child {
+    margin-bottom: 15px !important;
+  }
+
+
+  div.table-responsive>div.dataTables_wrapper>div.row {
+    margin: 0;
+    overflow: auto !important;
+}
+}
+
+/* Normal Halat mein (Jab Modal Band ho) */
+.sticky-row {
+    position: sticky;
+    top: 64px;
+    z-index: 995; /* Sidebar se niche rahega (Sidebar usually 1000+ hota hai) */
+    background-color: #fff;
+    padding: 35px 0 15px 0;
+}
+
+/* JAB MODAL OPEN HO (Special Case) */
+/* Isse sticky-row modal ke piche chali jayegi bina sidebar ko disturb kiye */
+body.modal-open .sticky-row {
+   
+    /* Agar sticky behavior modal ke piche ajeeb lage toh ise 'relative' kar dein */
+    position: static !important; 
+}
+
+/* Ensure karein ke Modal ka Backdrop sabse upar ho */
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+.modal {
+    z-index: 1050 !important;
+}
+
+
+
+
+/* Mobile View (768px aur usse niche) */
+@media screen and (max-width: 767px) {
+    .sticky-row {
+        position: static !important; /* Sticky behavior khatam ho jayega */
+        padding: 15px 0 !important; /* Mobile par extra space kam karne ke liye */
+        z-index: auto !important;
+        top: auto !important;
+    }
+}
+
+
+
+.page-item.active .page-link {
+    z-index: 3;
+    color: #fff;
+    background-color: #0b3d91;
+    border-color: #0b3d91;
+}
+
+
+/* Vehicle Detail Table Style (Image 1) */
+.detail-row {
+  border-bottom: 1px solid #eee;
+  padding: 12px 0;
+}
+.detail-label {
+  font-weight: 600;
+  color: #555;
+  width: 40%;
+}
+
+/* modal */
+.modal-header{
+  background-color: var(--primary) !important;
+}
+
+.modal-header h5{
+  color: #fff !important;
+}
+
+/* Header se extra padding khatam karne ke liye */
+table.dataTable thead th {
+    padding-right: 5px !important;
+}
+
+/* Base Select2 container */
+.select2-container {
+    width: 100% !important; /* full width like Bootstrap inputs */
+    font-size: 1rem;
+    font-weight: 500;
+    z-index: 1050;
+}
+
+/* Multiple select box styling */
+.select2-container--classic .select2-selection--multiple {
+    height: calc(3.5rem + 2px);
+    max-height: 7rem; /* maximum height before scroll appears */
+    display: flex !important;
+    flex-wrap: wrap; /* allow multiple lines for tags */
+    align-items: flex-start !important; /* top-align tags */
+    padding: 0rem 0.5rem !important;
+    border: 1px solid #ced4da;
+    border-radius: 0.375rem;
+    background-color: #fff;
+    overflow-y: auto; /* vertical scroll when too many tags */
+}
+
+/* Smooth scrolling for modern feel */
+.select2-container--classic .select2-selection--multiple::-webkit-scrollbar {
+    width: 6px;
+}
+.select2-container--classic .select2-selection--multiple::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+/* Rendered tags styling */
+.select2-container .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+/* Search input inside multi-select */
+.select2-container .select2-search--inline .select2-search__field {
+    margin-top: 10px !important;
+    font-size: 1rem;
+    min-width: 4rem;
+}  
+
+/* Focus state for professional look */
+.select2-container--classic.select2-container--focus .select2-selection--multiple {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+
+/* Dark Mode Custom Overrides */
+[data-bs-theme="dark"] {
+  --bs-body-bg: #121212;
+  --bs-body-color: #e0e0e0;
+  --bs-light: #1e1e1e;
+  --bs-dark: #f8f9fa;
+  --bs-border-color: #2d2d2d;
+}
+
+/* Card overrides for dark mode */
+[data-bs-theme="dark"] .card {
+  background-color: #1e1e1e;
+  border-color: #2d2d2d;
+}
+
+[data-bs-theme="dark"] .card-body {
+  color: #e0e0e0;
+}
+
+/* Table overrides for dark mode */
+[data-bs-theme="dark"] .table {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.05);
+  --bs-table-striped-color: #e0e0e0;
+  --bs-table-active-bg: rgba(255, 255, 255, 0.1);
+  --bs-table-active-color: #e0e0e0;
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.075);
+  --bs-table-hover-color: #e0e0e0;
+  color: #e0e0e0;
+  border-color: #4e4e4e;
+}
+
+[data-bs-theme="dark"] .table-light {
+  --bs-table-bg: #2d2d2d;
+  --bs-table-striped-bg: #323232;
+  --bs-table-striped-color: #e0e0e0;
+  --bs-table-active-bg: #373737;
+  --bs-table-active-color: #e0e0e0;
+  --bs-table-hover-bg: #323232;
+  --bs-table-hover-color: #e0e0e0;
+  color: #e0e0e0;
+  border-color: #373737;
+}
+
+[data-bs-theme="dark"] .table thead{
+  background-color: #3d3d3d;
+}
+
+[data-bs-theme="dark"] .table tbody{
+  color: #000;
+}
+
+[data-bs-theme="dark"] .fa-solid {
+  color: #000;
+}
+
+/* Form controls for dark mode */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+  color: #e0e0e0;
+  background-color: #3d3d3d !important;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+  background-color: #2d2d2d;
+  border-color: var(--primary);
+  color: #e0e0e0;
+}
+
+/* Timeline for dark mode */
+[data-bs-theme="dark"] .timeline-line {
+  background-color: #2d2d2d;
+}
+
+[data-bs-theme="dark"] .timeline-icon {
+  background-color: #2d2d2d !important;
+}
+
+/* Badge colors for dark mode */
+[data-bs-theme="dark"] .badge.bg-light {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+[data-bs-theme="dark"] .badge.bg-white {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+/* Chart adjustments for dark mode */
+[data-bs-theme="dark"] canvas {
+  filter: brightness(0.9) contrast(1.1);
+}
+
+/* Sidebar/Menu adjustments */
+[data-bs-theme="dark"] .main-menu {
+  background-color: #1a1a1a;
+}
+
+[data-bs-theme="dark"] .app-menu {
+  background-color: #1a1a1a;
+}
+
+[data-bs-theme="dark"] .menu-item .menu-link {
+  color: #b0b0b0;
+}
+
+[data-bs-theme="dark"] .menu-item .menu-link:hover,
+[data-bs-theme="dark"] .menu-item .menu-link.active {
+  color: #ffffff;
+  background-color: #2d2d2d;
+}
+
+/* Topbar adjustments */
+[data-bs-theme="dark"] .navbar-custom {
+  background-color: #1a1a1a;
+  border-bottom: 1px solid #2d2d2d;
+}
+
+[data-bs-theme="dark"] .topbar {
+  background-color: #1a1a1a;
+}
+
+/* Modal adjustments */
+[data-bs-theme="dark"] .modal-content {
+  background-color: #1e1e1e;
+  border-color: #2d2d2d;
+}
+
+[data-bs-theme="dark"] .modal-header {
+  border-bottom-color: #2d2d2d;
+}
+
+[data-bs-theme="dark"] .modal-footer {
+  border-top-color: #2d2d2d;
+}
+
+/* Dropdown adjustments */
+[data-bs-theme="dark"] .dropdown-menu {
+  background-color: #1e1e1e;
+  border-color: #2d2d2d;
+}
+
+[data-bs-theme="dark"] .dropdown-item {
+  color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .dropdown-item:hover,
+[data-bs-theme="dark"] .dropdown-item:focus {
+  background-color: #2d2d2d;
+  color: #ffffff;
+}
+
+/* Input group adjustments */
+[data-bs-theme="dark"] .input-group-text {
+  background-color: #2d2d2d;
+  border-color: #3d3d3d;
+  color: #e0e0e0;
+}
+
+/* Border adjustments */
+[data-bs-theme="dark"] .border,
+[data-bs-theme="dark"] .border-top,
+[data-bs-theme="dark"] .border-end,
+[data-bs-theme="dark"] .border-bottom,
+[data-bs-theme="dark"] .border-start {
+  border-color: #3d3d3d !important;
+}
+
+/* Text color adjustments */
+[data-bs-theme="dark"] .text-dark {
+  color: #e0e0e0 !important;
+}
+
+[data-bs-theme="dark"] .text-muted {
+  color: #a0a0a0 !important;
+}
+
+[data-bs-theme="dark"] .text-body {
+  color: #e0e0e0 !important;
+}
+
+/* Background color adjustments */
+[data-bs-theme="dark"] .bg-light {
+  background-color: #2d2d2d !important;
+}
+
+[data-bs-theme="dark"] .bg-white {
+  background-color: #1e1e1e !important;
+}
+
+/* Chart.js tooltip adjustments */
+[data-bs-theme="dark"] .chartjs-tooltip {
+  background-color: #2d2d2d !important;
+  border-color: #3d3d3d !important;
+  color: #e0e0e0 !important;
+}
+
+/* Custom scrollbar for dark mode */
+[data-bs-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  background-color: #1a1a1a;
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: #3d3d3d;
+  border-radius: 5px;
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: #555454;
+}
+
+/* Your VMS Template Dark Mode Fixes */
+[data-bs-theme="dark"] .sidebar {
+  background: #2d2d2d ;
+}
+
+[data-bs-theme="dark"] .content {
+  background: #121212;
+}
+
+[data-bs-theme="dark"] .sidebar .navbar .navbar-nav .nav-link {
+  color: #b0b0b0;
+  border-left: 3px solid #2d2d2d ;
+}
+
+[data-bs-theme="dark"] .sidebar .navbar .navbar-nav .nav-link:hover,
+[data-bs-theme="dark"] .sidebar .navbar .navbar-nav .nav-link.active {
+  color: var(--light) ;
+  background: var(--primary);
+}
+
+[data-bs-theme="dark"] .sidebar .navbar .navbar-nav .nav-link i {
+  background: var(--light);
+  color: #000;
+}
+
+[data-bs-theme="dark"] .sidebar .navbar .navbar-nav .nav-link.active i {
+  color: var(--primary) !important;
+}
+
+[data-bs-theme="dark"] .dropdown-toggle::after {
+    color: #fff;
+}
+
+[data-bs-theme="dark"] .content .navbar .navbar-nav .nav-link{
+    color: var(--light);
+    outline: none;
+}
+
+[data-bs-theme="dark"] .content .navbar .navbar-nav .nav-link i{
+    color: var(--primary);
+    outline: none;
+}
+
+[data-bs-theme="dark"] .logo-dark {
+  display: block !important;
+}
+
+[data-bs-theme="dark"] .logo-light {
+  display: none !important;
+}
+
+[data-bs-theme="light"] .logo-dark {
+  display: none !important;
+}
+
+[data-bs-theme="light"] .logo-light {
+  display: block !important;
+}
+
+
+[data-bs-theme="dark"] .detail-label {
+    color: #e0e0e0;
+}
+
+[data-bs-theme="dark"] .select2-container--default .select2-selection--multiple {
+    background-color: #3d3d3d;
+    border: 1px solid #2d2d2d;
+    border-radius: 4px;
+    cursor: text;
+    padding-bottom: 5px;
+    padding-right: 5px;
+    position: relative;
+}
+
+[data-bs-theme="dark"] .select2-container--default.select2-container--focus .select2-selection--multiple {
+    border: solid black 1px;
+    outline: 0;
+    background: #3d3d3d;
+}
+
+[data-bs-theme="dark"] .select2-results__option--selectable{
+  cursor: pointer;
+  background: #3d3d3d;
+}
+
+[data-bs-theme="dark"] .select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+    cursor: default;
+    padding-left: 2px;
+    padding-right: 5px;
+    color: #3d3d3d;
+}
+
+/* Smooth transition for dark mode toggle */
+#dark-mode-toggle {
+    transition: all 0.3s ease;
+}
+
+#dark-mode-toggle i {
+    transition: all 0.3s ease;
+}
+
+/* Mode Switch Button Styling */
+.mode-switch-btn {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff !important; /* Theme ke hisab se badlega */
+    border: 1px solid var(--border-color);
+    border-radius: 50px;
+    color: var(--primary) !important;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    margin-left: 15px; /* Navbar ke items ke beech fasla */
+}
+
+/* .mode-switch-btn:hover {
+    color: #000 !important;
+} */
+
+/* [data-bs-theme="dark"] .mode-switch-btn:hover {
+    color: #000 !important;
+} */
+
+
+/* Dark Mode Specific Adjustments */
+[data-bs-theme="dark"] .mode-switch-btn {
+    background: #fff; /* Dark background for button */
+    border-color: #333;
+    color: #000; /* Sun color (Amber/Yellow) */
+}
+
+footer{
+  display: none;
+}

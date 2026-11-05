@@ -1,0 +1,88 @@
+<x-layouts.auth>
+    <x-slot name="pageTitle">{{__('language.role_detail')}}</x-slot>
+
+    <x-slot:actionButton>
+        @can('edit_role')
+                    <x-auth.href-link link-href="{{ route('roles.edit', $data->id) }}"
+                        link-value="{{ __('language.role_edit') }}" link-class="btn btn-primary" />
+                    @endcan
+    </x-slot:actionButton>
+
+    @push('auth_styles')
+    <style>
+        .big-checkbox {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #007bff;
+            background-color: #fff;
+        }
+    </style>
+    @endpush
+    <div class="row mt-3">
+        <div class="col-md-12">
+            <x-auth.card {{-- card-header="{{__('language.role_detail')}}" --}}>
+
+                <x-auth.form form-action="{{ route('roles.assign_permission') }}">
+                    <div class="row">
+                        <div class="col-md-4 mt-4">
+                            {!! $data->role_title !!}
+                        </div>
+
+                        <h5 class="mt-3 card-title fs fw-semibold">{{__('language.permission_assigned')}}</h5>
+
+                        <input type="hidden" name="role" value="{{ $data->id }}" />
+                        @php
+                        $groupedPermissions = $data->availablePermissions->groupBy('category');
+                        @endphp
+                       @foreach ($groupedPermissions as $category => $permissionGroup)
+                        @php
+                            $categorySlug = Str::slug($category);
+                        @endphp
+                        <div class="col-12 mt-3 mb-1">
+                            <div class="border border-1 rounded-4 mb-3 p-3" style="background-color: #f8fafc;">
+
+                                <div class="d-flex align-items-center gap-3">
+                                    <h6 class="fw-bold text-primary ">
+                                        <i class="fas fa-lock me-2"></i> {{ $category }}
+                                    </h6>
+                                    
+                                   
+                                     <!-- <x-auth.input-checkbox 
+                                        name="select_all_{{ $categorySlug }}" 
+                                        id="select-all-{{ $categorySlug }}" 
+                                        label="Select All" 
+                                        marginTop="d-flex align-items-center gap-2 mt-0"
+                                        attributes="data-master-slug={{ $categorySlug }} class=master-checkbox" 
+                                    /> -->
+                                   
+                                </div>
+
+                                <div class="row mt-3">
+                                    @foreach ($permissionGroup as $permissionTh)
+                                    <div class="col-md-4 mb-2">
+                                        <x-auth.input-checkbox
+                                            name="permissions[{{ $permissionTh->id }}]"
+                                            id="{{ $permissionTh->id }}permission"
+                                            :val="$permissionTh->id"
+                                            label="{{ $permissionTh->title }}"
+                                            attributes="class=child-checkbox-{{ $categorySlug }}"
+                                            :checked="in_array($permissionTh->id, $data->permissions->pluck('id')->toArray())"
+                                        />
+                                    </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                        @endforeach
+
+                        <div class="col-md-12">
+                            <x-auth.input-button btn-class="mt-3 btn-primary"
+                                btn-value="{{__('language.assign_permission')}}" btn-type="submit" />
+                        </div>
+                    </div>
+                </x-auth.form>
+            </x-auth.card>
+        </div>
+    </div>
+</x-layouts.auth>
