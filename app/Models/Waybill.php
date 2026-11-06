@@ -66,6 +66,23 @@ class Waybill extends Model
         return $this->belongsTo(DriverDetail::class, 'driver_id');
     }
 
+    public function driverPlans()
+    {
+        return $this->hasMany(WaybillDriverPlan::class, 'waybill_id')->orderBy('sequence');
+    }
+
+    public function drivers()
+    {
+        return $this->hasManyThrough(
+            DriverDetail::class,
+            WaybillDriverPlan::class,
+            'waybill_id',
+            'id',
+            'id',
+            'driver_id',
+        )->orderBy('waybill_driver_plans.sequence');
+    }
+
     public function status()
     {
         return $this->belongsTo(Status::class);

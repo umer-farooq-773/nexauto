@@ -1458,6 +1458,12 @@ class WialonService
         return is_array($route) ? $route : null;
     }
 
+    /** Return a route's current Wialon snapshot, including its assigned units. */
+    public function getRouteSnapshot(int $routeId): ?array
+    {
+        return $routeId > 0 ? $this->getRouteDetails($routeId) : null;
+    }
+
     /**
      * Get route assigned to a specific unit via unit's custom fields or schedules
      * Alternative method when resource access is not available
@@ -1602,24 +1608,9 @@ class WialonService
             }
         }
 
-        // 2. If no explicit unit assignment matches, fallback to the latest route available in Wialon!
-        usort($routes, function ($a, $b) {
-            return ((int) ($b['id'] ?? 0)) <=> ((int) ($a['id'] ?? 0));
-        });
+        Log::info('No Wialon route is assigned to this unit', ['unit_id' => $unitId]);
 
-        $latestRoute = $routes[0];
-        $latestRouteId = (int) ($latestRoute['id'] ?? 0);
-        if ($latestRouteId > 0) {
-            $latestRoute = $this->getRouteDetails($latestRouteId) ?? $latestRoute;
-        }
-
-        Log::info('Using latest Wialon route as fallback', [
-            'unit_id' => $unitId,
-            'fallback_route_id' => $latestRouteId,
-            'fallback_route_name' => $latestRoute['nm'] ?? $latestRoute['n'] ?? 'Unnamed',
-        ]);
-
-        return $latestRoute;
+        return null;
     }
 
     /**
@@ -1949,6 +1940,19 @@ class WialonService
         return $matches[0];
     }
 
+    /** Resolve a stored Wialon item ID or UID/IMEI to its real numeric item ID. */
+    public function resolveUnitId(string|int|null $gpsUnitId, ?string $imei = null): ?int
+    {
+        if ($gpsUnitId === null || trim((string) $gpsUnitId) === '') {
+            return null;
+        }
+
+        $unit = $this->resolveUnit($gpsUnitId, $imei);
+        $unitId = isset($unit['id']) && is_numeric($unit['id']) ? (int) $unit['id'] : 0;
+
+        return $unitId > 0 ? $unitId : null;
+    }
+
     /** Remove credentials if Wialon returns them in custom/advanced properties. */
     private function sanitizeForLog(mixed $value): mixed
     {
@@ -2001,7 +2005,33 @@ class WialonService
      */
     public function syncWaybillRoute(int|string $unitId, array $waybillData): ?array
     {
-        $unitIdInt = (int) $unitId;
+        $existingRouteId = isset($waybillData['wialon_route_id']) && is_numeric($waybillData['wialon_route_id']) && (int) $waybillData['wialon_route_id'] > 0
+            ? (int) $waybillData['wialon_route_id']
+            : null;
+        try {
+            $unitIdInt = $this->resolveUnitId($unitId, $waybillData['gps_imei'] ?? null);
+        } catch (\Throwable $resolveException) {
+            Log::warning('Wialon route sync could not resolve the vehicle unit', [
+                'waybill_number' => $waybillData['waybill_number'] ?? null,
+                'error' => $resolveException->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'unit_assigned' => false,
+                'error' => $resolveException->getMessage(),
+                'wialon_route_id' => $existingRouteId,
+            ];
+        }
+
+        if ($unitIdInt === null) {
+            return [
+                'success' => false,
+                'unit_assigned' => false,
+                'error' => 'The vehicle GPS unit could not be resolved in Wialon.',
+                'wialon_route_id' => $existingRouteId,
+            ];
+        }
 
         // ----------------------------------------------------------------
         // Build the ordered rpts (route points) array
@@ -2073,7 +2103,12 @@ class WialonService
             Log::warning('Wialon route sync skipped: need at least origin + destination (2 points).', [
                 'points_found' => count($points),
             ]);
-            return null;
+            return [
+                'success' => false,
+                'unit_assigned' => false,
+                'error' => 'A Wialon route requires at least an origin and destination.',
+                'wialon_route_id' => $existingRouteId,
+            ];
         }
 
         try {
@@ -2106,6 +2141,7 @@ class WialonService
 
             return [
                 'success'         => true,
+                'unit_assigned'   => true,
                 'wialon_unit_id'  => $unitIdInt,
                 'wialon_route_id' => $wialonRouteId,
                 'resource_id'     => $resourceId,
@@ -2117,12 +2153,22 @@ class WialonService
             Log::error('Wialon route sync failed', [
                 'wialon_unit_id' => $unitIdInt,
                 'waybill_number' => $waybillData['waybill_number'] ?? null,
+                'wialon_route_id' => $e instanceof \App\Exceptions\WialonRouteSyncException ? $e->routeId : $existingRouteId,
                 'error'          => $e->getMessage(),
             ]);
 
+            $routeId = $e instanceof \App\Exceptions\WialonRouteSyncException
+                ? $e->routeId
+                : $existingRouteId;
+            $errorMessage = str_contains(strtolower($e->getMessage()), 'error 7')
+                ? 'Wialon denied route assignment or verification. The API user needs the route edit-settings right and access to the selected unit.'
+                : $e->getMessage();
+
             return [
                 'success' => false,
-                'error'   => $e->getMessage(),
+                'unit_assigned' => false,
+                'error'   => $errorMessage,
+                'wialon_route_id' => $routeId,
             ];
         }
     }
@@ -2240,6 +2286,8 @@ class WialonService
         $isUpdate = ($existingRouteId !== null && $existingRouteId > 0);
         $routeId  = $isUpdate ? $existingRouteId : 0;
 
+        try {
+
         // Build checkPoints in the format route/update_checkpoints actually expects.
         // 'f' => 1 means "point from the map" (a plain lat/lng stop, not a geofence or unit).
         $checkPoints = [];
@@ -2253,9 +2301,7 @@ class WialonService
             ];
         }
 
-        // STEP 1 — create the route shell if this is a new route.
-        // core/create_route only creates; there is no separate "update name" call
-        // needed for an existing route, so this step is skipped on update.
+        // STEP 1 — create route shell, or update the existing route name.
         if (!$isUpdate) {
             Log::info('Calling Wialon core/create_route', [
                 'creator_id' => $this->creatorId,
@@ -2284,6 +2330,15 @@ class WialonService
                 'wialon_route_id' => $routeId,
                 'route_name'      => $routeName,
             ]);
+        } else {
+            try {
+                $this->request('item/update_name', ['itemId' => $routeId, 'name' => $routeName]);
+            } catch (\Throwable $renameException) {
+                Log::warning('Wialon route rename failed; continuing with route sync', [
+                    'route_id' => $routeId,
+                    'error' => $renameException->getMessage(),
+                ]);
+            }
         }
 
         // STEP 2 — push checkpoints onto the route (works the same for create/update)
@@ -2297,21 +2352,35 @@ class WialonService
             'checkPoints' => $checkPoints,
         ]);
 
-        // STEP 3 — attach the vehicle/unit to the route, if one was given
-        if (!empty($unitId)) {
+        // STEP 3 — set the assigned unit (or clear assignments if omitted).
+        {
             Log::info('Calling Wialon route/update_config', [
                 'route_id' => $routeId,
                 'unit_id'  => $unitId,
             ]);
 
-            $this->request('route/update_config', [
-                'itemId' => $routeId,
-                'config' => [
-                    'color' => 16711680, // ARGB red, default — cosmetic only
-                    'descr' => $routeName,
-                    'units' => [$unitId],
-                ],
-            ]);
+            try {
+                $this->request('route/update_config', [
+                    'itemId' => $routeId,
+                    'config' => [
+                        'color' => 16711680, // ARGB red, default — cosmetic only
+                        'descr' => $routeName,
+                        'units' => $unitId !== null && $unitId > 0 ? [$unitId] : [],
+                    ],
+                ]);
+            } catch (\Throwable $configException) {
+                if (str_contains(strtolower($configException->getMessage()), 'error 7')) {
+                    throw new \RuntimeException('Wialon denied route assignment. The API user needs the route edit-settings right and access to the selected unit.', 0, $configException);
+                }
+
+                throw $configException;
+            }
+        }
+
+        $snapshot = $this->getRouteSnapshot($routeId);
+        $assignedUnits = array_map('intval', $snapshot['rcfg']['units'] ?? []);
+        if ($unitId !== null && $unitId > 0 && !in_array($unitId, $assignedUnits, true)) {
+            throw new \RuntimeException('Wialon did not confirm vehicle assignment to the route. Check that the API user has the route edit-settings right and access to the selected unit.');
         }
 
         Log::info('Wialon route created/updated in Wialon portal', [
@@ -2323,6 +2392,14 @@ class WialonService
         ]);
 
         return $routeId;
+        } catch (\Throwable $exception) {
+            $knownRouteId = $routeId > 0 ? $routeId : $existingRouteId;
+            throw new \App\Exceptions\WialonRouteSyncException(
+                $exception->getMessage(),
+                $knownRouteId,
+                $exception,
+            );
+        }
     }
 
     /**

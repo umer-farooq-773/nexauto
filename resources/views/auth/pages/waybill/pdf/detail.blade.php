@@ -13,6 +13,28 @@
         <p class="subtitle">{{ __('Waybill') }} #{{ $data->waybill_number }}</p>
     </div>
 
+    @php
+        $displayDriverPlans = $data->driverPlans->filter(fn ($plan) => $plan->driver)->values();
+        if ($displayDriverPlans->isEmpty() && $data->driver) {
+            $displayDriverPlans = collect([(object) ['driver' => $data->driver, 'sequence' => 1, 'planned_seconds' => null, 'status' => 'pending']]);
+        }
+    @endphp
+    <div class="pdf-card">
+        <div class="pdf-card-header"><p class="card-title">{{ __('Drivers') }}</p></div>
+        <div class="pdf-card-body">
+            <table style="width:100%; border-collapse:collapse;">
+                <thead><tr style="background:#f1f5f9;"><th style="padding:6px 8px;border:1px solid #e2e8f0;text-align:left;">{{ __('Order') }}</th><th style="padding:6px 8px;border:1px solid #e2e8f0;text-align:left;">{{ __('Driver') }}</th><th style="padding:6px 8px;border:1px solid #e2e8f0;text-align:left;">{{ __('Planned time') }}</th><th style="padding:6px 8px;border:1px solid #e2e8f0;text-align:left;">{{ __('Status') }}</th></tr></thead>
+                <tbody>
+                    @forelse ($displayDriverPlans as $plan)
+                        <tr><td style="padding:6px 8px;border:1px solid #e2e8f0;">{{ $loop->iteration }}</td><td style="padding:6px 8px;border:1px solid #e2e8f0;">{{ $plan->driver->full_name }}</td><td style="padding:6px 8px;border:1px solid #e2e8f0;">{{ $plan->planned_seconds ? rtrim(rtrim(number_format($plan->planned_seconds / 60, 1), '0'), '.') . ' min' : __('Until trip end') }}</td><td style="padding:6px 8px;border:1px solid #e2e8f0;">{{ ucfirst($plan->status ?? 'pending') }}</td></tr>
+                    @empty
+                        <tr><td colspan="4" style="padding:6px 8px;border:1px solid #e2e8f0;">-</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="pdf-card">
         <div class="pdf-card-header">
             <p class="card-title">{{ __('WayBill Information') }}</p>

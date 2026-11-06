@@ -37,7 +37,17 @@
                     <tr>
                         <td>{{ $waybill->waybill_number }}</td>
                         <td>{{ $waybill->vehicle?->fleet_no ?? '-' }}</td>
-                        <td>{{ $waybill->driver?->full_name ?? '-' }}</td>
+                        <td>
+                            @php
+                                $listedDrivers = $waybill->driverPlans->filter(fn ($plan) => $plan->driver)->map(fn ($plan) => $plan->driver->full_name)->values();
+                                if ($listedDrivers->isEmpty() && $waybill->driver) $listedDrivers->push($waybill->driver->full_name);
+                            @endphp
+                            {{ $listedDrivers->first() ?? '-' }}
+                            @if ($listedDrivers->count() > 1)
+                                <span class="badge bg-light text-primary border" title="{{ $listedDrivers->slice(1)->implode(', ') }}" data-bs-toggle="tooltip">+{{ $listedDrivers->count() - 1 }}</span>
+                                <span class="visually-hidden">{{ $listedDrivers->slice(1)->implode(', ') }}</span>
+                            @endif
+                        </td>
                         <td>{{ $waybill->route_trip?->trip_name ?? '-' }}</td>
                         <td>{{ $waybill->dispatch_date?->format('d M Y') ?? '-' }}</td>
                         <td>{{ $waybill->delivery_date?->format('d M Y') ?? '-' }}</td>

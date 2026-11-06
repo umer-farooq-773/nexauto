@@ -32,12 +32,16 @@ class WaybillDto
     public readonly ?string $wialon_route_id;
     public readonly ?string $route_source;
     public readonly ?array $cargos;
+    public readonly array $drivers;
 
     public function __construct($request)
     {
         $this->waybill_number         = $request['waybill_number'];
         $this->vehicle_id             = $request['vehicle_id'];
-        $this->driver_id              = $request['driver_id'];
+        $this->drivers                = isset($request['drivers']) && is_array($request['drivers'])
+            ? array_values($request['drivers'])
+            : [['driver_id' => $request['driver_id'], 'duration_minutes' => null]];
+        $this->driver_id              = (string) ($this->drivers[0]['driver_id'] ?? $request['driver_id']);
         $this->status_id              = $request['status_id'] ?? null;
         $this->route_trip_id          = $request['route_trip_id'] ?? null;
         $this->origin                 = $request['origin'] ?? null;
@@ -101,6 +105,7 @@ class WaybillDto
             'wialon_route_id'         => $this->wialon_route_id,
             'route_source'            => $this->route_source,
             'cargos'                  => $this->cargos,
+            'drivers'                 => $this->drivers,
         ];
     }
 

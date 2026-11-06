@@ -41,8 +41,12 @@
                 <tbody>
                     @foreach ($data['all'] as $record)
                         <tr>
-                            <td><a
-                                    href="{{ route('waybill.show', $record->waybill?->id) }}">{{ $record->waybill?->waybill_number ?? '-' }}</a>
+                            <td>
+                                @if ($record->waybill)
+                                    <a href="{{ route('waybill.show', $record->waybill->id) }}">{{ $record->waybill->waybill_number ?? '-' }}</a>
+                                @else
+                                    -
+                                @endif
                             </td>
 
                             <td>{{ $record->vehicle?->fleet_no ?? '-' }} - {{ $record->vehicle?->truck_no ?? '' }}</td>

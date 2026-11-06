@@ -1,4 +1,23 @@
 <x-auth.form form-id="WaybillForm" form-action="{{ $route }}" enctype="true">
+    @php
+        $initialDriverRows = old('drivers');
+        if (!is_array($initialDriverRows) || $initialDriverRows === []) {
+            if ($result?->driverPlans?->isNotEmpty()) {
+                $initialDriverRows = $result->driverPlans->map(fn ($plan) => [
+                    'driver_id' => $plan->driver_id,
+                    'duration_minutes' => $plan->planned_seconds !== null ? max(1, (int) ceil($plan->planned_seconds / 60)) : '',
+                ])->all();
+            } else {
+                $initialDriverRows = [[
+                    'driver_id' => old('driver_id', $result?->driver_id),
+                    'duration_minutes' => '',
+                ]];
+            }
+        }
+        $initialDriverRows = array_values($initialDriverRows);
+        if ($initialDriverRows === []) $initialDriverRows = [['driver_id' => old('driver_id', $result?->driver_id), 'duration_minutes' => '']];
+        $firstDriverId = $initialDriverRows[0]['driver_id'] ?? old('driver_id', $result?->driver_id);
+    @endphp
     @if ($isEdit)
         @method('PUT')
     @endif
@@ -31,6 +50,7 @@
             value="{{ $result?->route_geometry ? (is_string($result->route_geometry) ? $result->route_geometry : json_encode($result->route_geometry)) : old('route_geometry', '[]') }}">
         <input type="hidden" name="wialon_route_id" id="wialon_route_id" value="{{ $result?->wialon_route_id ?? old('wialon_route_id') }}">
         <input type="hidden" name="route_source" id="route_source" value="{{ $result?->route_source ?? old('route_source', 'geoapify') }}">
+        <input type="hidden" name="driver_id" id="driver_id" value="{{ $firstDriverId }}">
 
         {{-- ================= SECTION 1: Vehicle & Driver ================= --}}
         <div class="col-12">
@@ -63,17 +83,38 @@
                         </select>
                     </div>
 
-                    <div class="col-md-6 modern-field">
-                        <label for="driver_id">{{ __('Driver') }} <span class="text-danger">*</span></label>
-                        <select name="driver_id" id="driver_id" class="form-select" required>
-                            <option value="">-- Select Driver --</option>
-                            @foreach ($drivers as $driver)
-                                <option value="{{ $driver->id }}"
-                                    {{ ($result?->driver_id ?? old('driver_id')) == $driver->id ? 'selected' : '' }}>
-                                    {{ $driver->full_name }}
-                                </option>
+                    <div class="col-12 modern-field">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label class="mb-0">{{ __('Drivers (in driving order)') }} <span class="text-danger">*</span></label>
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" id="btn-add-driver">
+                                <i class="ri-user-add-line me-1"></i>{{ __('Add Driver') }}
+                            </button>
+                        </div>
+                        <p class="small text-muted mb-3">{{ __('One driver: time is optional. Several drivers: set minutes for each, the last driver can stay empty (until the trip ends).') }}</p>
+                        <div id="waybill-driver-rows" class="d-flex flex-column gap-2">
+                            @foreach ($initialDriverRows as $index => $driverRow)
+                                <div class="waybill-driver-row border rounded-3 p-3 bg-light-subtle" data-index="{{ $index }}">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-auto"><span class="badge bg-primary rounded-pill driver-sequence">{{ $index + 1 }}</span></div>
+                                        <div class="col-md modern-field">
+                                            <label>{{ __('Driver') }}</label>
+                                            <select class="form-select waybill-driver-select" name="drivers[{{ $index }}][driver_id]" required>
+                                                <option value="">-- Select Driver --</option>
+                                                @foreach ($drivers as $driver)
+                                                    <option value="{{ $driver->id }}" @selected(($driverRow['driver_id'] ?? '') == $driver->id)>{{ $driver->full_name }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3 modern-field">
+                                            <label>{{ __('Planned time (minutes)') }}</label>
+                                            <input type="number" class="form-control driver-duration" name="drivers[{{ $index }}][duration_minutes]" min="1" step="1" value="{{ $driverRow['duration_minutes'] ?? '' }}" placeholder="{{ __('Optional') }}">
+                                        </div>
+                                        <div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm btn-remove-driver" title="{{ __('Remove driver') }}"><i class="ri-delete-bin-line"></i></button></div>
+                                    </div>
+                                </div>
                             @endforeach
-                        </select>
+                        </div>
+                        <div id="assigned-driver-quick-add" class="d-flex flex-wrap gap-2 mt-2"></div>
                     </div>
                 </div>
             </div>
@@ -957,12 +998,17 @@
                 dropdownParent: dropdownTarget
             });
 
-            $('#driver_id').select2({
-                placeholder: "Select Driver",
-                allowClear: true,
-                width: '100%',
-                dropdownParent: dropdownTarget
-            });
+            function initDriverSelect($select) {
+                if (!$select.hasClass('select2-hidden-accessible')) {
+                    $select.select2({
+                        placeholder: "Select Driver",
+                        allowClear: true,
+                        width: '100%',
+                        dropdownParent: dropdownTarget
+                    });
+                }
+            }
+            $('.waybill-driver-select').each(function() { initDriverSelect($(this)); });
 
             $('#status_id').select2({
                 placeholder: "Select Status",
@@ -1104,7 +1150,6 @@
             updateCargoItemNumbers();
 
 
-            var savedDriverId = '{{ $result?->driver_id ?? old('driver_id') }}';
             var waybillMap = null;
             var mapLayerGroup = null;
 
@@ -1125,45 +1170,104 @@
 
             renderCheckpointsUI();
 
-            // -------------------------------------------------------------
-            // Requirement 1: Vehicle -> Driver Dependent Dropdown Preserved
-            // -------------------------------------------------------------
-            $('#vehicle_id').on('change', function() {
-                var vehicleId = $(this).val();
-                var $driver = $('#driver_id');
-                var getDriversUrl = "{{ route('waybill.vehicle_drivers', ['vehicleId' => ':id']) }}".replace(':id', vehicleId);
-
-                if (!vehicleId) {
-                    $driver.html('<option value="">-- Select Driver --</option>').trigger('change');
-                    return;
-                }
-
-                $driver.prop('disabled', true);
-                $.get(getDriversUrl, function(drivers) {
-                    var options = '<option value="">-- Select Driver --</option>';
-                    $.each(drivers, function(i, d) {
-                        options += '<option value="' + d.id + '">' + d.name + '</option>';
-                    });
-                    $driver.html(options).prop('disabled', false);
-
-                    if (savedDriverId && $driver.find('option[value="' + savedDriverId + '"]').length) {
-                        $driver.val(savedDriverId).trigger('change');
-                        savedDriverId = '';
-                    } else if (drivers.length > 0) {
-                        $driver.val(drivers[0].id).trigger('change');
-                    } else {
-                        $driver.trigger('change');
-                    }
-                }).fail(function() {
-                    $driver.prop('disabled', false);
+            // Ordered waybill driver plan repeater.
+            function updateDriverRows() {
+                var $rows = $('#waybill-driver-rows .waybill-driver-row');
+                $rows.each(function(index) {
+                    var $row = $(this);
+                    $row.attr('data-index', index);
+                    $row.find('.driver-sequence').text(index + 1);
+                    $row.find('.waybill-driver-select').attr('name', 'drivers[' + index + '][driver_id]');
+                    $row.find('.driver-duration').attr('name', 'drivers[' + index + '][duration_minutes]')
+                        .prop('required', $rows.length > 1 && index < $rows.length - 1);
+                    $row.find('.btn-remove-driver').toggle($rows.length > 1);
+                    initDriverSelect($row.find('.waybill-driver-select'));
                 });
+
+                $('#driver_id').val($rows.first().find('.waybill-driver-select').val() || '');
+                refreshDriverOptions();
+            }
+
+            function refreshDriverOptions() {
+                var selected = [];
+                $('#waybill-driver-rows .waybill-driver-select').each(function() {
+                    if ($(this).val()) selected.push(String($(this).val()));
+                });
+                $('#waybill-driver-rows .waybill-driver-select').each(function() {
+                    var current = String($(this).val() || '');
+                    $(this).find('option').each(function() {
+                        var optionId = String(this.value || '');
+                        $(this).prop('disabled', optionId !== '' && optionId !== current && selected.indexOf(optionId) !== -1);
+                    });
+                    $(this).trigger('change.select2');
+                });
+                renderAssignedDriverQuickAdd();
+            }
+
+            function addDriverRow(driverId) {
+                var $row = $('<div class="waybill-driver-row border rounded-3 p-3 bg-light-subtle"><div class="row g-2 align-items-end"><div class="col-auto"><span class="badge bg-primary rounded-pill driver-sequence"></span></div><div class="col-md modern-field"><label>{{ __('Driver') }}</label><select class="form-select waybill-driver-select" required><option value="">-- Select Driver --</option></select></div><div class="col-md-3 modern-field"><label>{{ __('Planned time (minutes)') }}</label><input type="number" class="form-control driver-duration" min="1" step="1" placeholder="{{ __('Optional') }}"></div><div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm btn-remove-driver" title="{{ __('Remove driver') }}"><i class="ri-delete-bin-line"></i></button></div></div></div>');
+                var $select = $row.find('.waybill-driver-select');
+                @foreach ($drivers as $driver)
+                    $select.append($('<option>').val(@js((string) $driver->id)).text(@js($driver->full_name)));
+                @endforeach
+                $('#waybill-driver-rows').append($row);
+                initDriverSelect($select);
+                if (driverId) $select.val(String(driverId));
+                updateDriverRows();
+            }
+
+            function renderAssignedDriverQuickAdd() {
+                var $area = $('#assigned-driver-quick-add').empty();
+                var selected = $('#waybill-driver-rows .waybill-driver-select').map(function() { return String($(this).val() || ''); }).get();
+                $.each(window.waybillAssignedDrivers || [], function(_, driver) {
+                    if (driver.assigned && selected.indexOf(String(driver.id)) === -1) {
+                        $('<button type="button" class="btn btn-sm btn-light border rounded-pill">')
+                            .text('+ ' + driver.name).attr('data-driver-id', driver.id).appendTo($area);
+                    }
+                });
+            }
+
+            $(document).off('change.waybillDriverPlan', '.waybill-driver-select').on('change.waybillDriverPlan', '.waybill-driver-select', function() {
+                if (!$(this).data('auto-filling')) $(this).data('auto-filled', false);
+                updateDriverRows();
+            });
+            $(document).off('click.waybillDriverPlan', '#btn-add-driver').on('click.waybillDriverPlan', '#btn-add-driver', function() { addDriverRow(); });
+            $(document).off('click.waybillDriverPlan', '.btn-remove-driver').on('click.waybillDriverPlan', '.btn-remove-driver', function() {
+                var $select = $(this).closest('.waybill-driver-row').find('.waybill-driver-select');
+                if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');
+                $(this).closest('.waybill-driver-row').remove();
+                updateDriverRows();
+            });
+            $(document).off('click.waybillDriverPlan', '#assigned-driver-quick-add button').on('click.waybillDriverPlan', '#assigned-driver-quick-add button', function() {
+                addDriverRow($(this).attr('data-driver-id'));
             });
 
             function loadVehicleDriverState() {
-                if ($('#vehicle_id').val()) {
-                    $('#vehicle_id').trigger('change');
+                var vehicleId = $('#vehicle_id').val();
+                if (!vehicleId) {
+                    window.waybillAssignedDrivers = [];
+                    renderAssignedDriverQuickAdd();
+                    return;
                 }
+
+                var getDriversUrl = "{{ route('waybill.vehicle_drivers', ['vehicleId' => ':id']) }}".replace(':id', vehicleId);
+                $.get(getDriversUrl, function(drivers) {
+                    window.waybillAssignedDrivers = (drivers || []).filter(function(driver) { return driver.assigned === true; });
+                    var $first = $('#waybill-driver-rows .waybill-driver-select').first();
+                    var isEmptyOrAutomatic = !$first.val() || $first.data('auto-filled') === true;
+                    if (window.waybillAssignedDrivers.length > 0 && isEmptyOrAutomatic) {
+                        $first.data('auto-filled', true).data('auto-filling', true).val(String(window.waybillAssignedDrivers[0].id)).trigger('change');
+                        $first.data('auto-filling', false);
+                    } else if (window.waybillAssignedDrivers.length === 0 && $first.data('auto-filled') === true) {
+                        $first.data('auto-filled', false).data('auto-filling', true).val('').trigger('change');
+                        $first.data('auto-filling', false);
+                    }
+                    updateDriverRows();
+                });
             }
+
+            $('#vehicle_id').off('change.waybillDriverPlan').on('change.waybillDriverPlan', loadVehicleDriverState);
+            updateDriverRows();
 
             // If there's no modal wrapper (dedicated add/edit page), it's safe
             // to load immediately. Inside a modal, this runs from the

@@ -27,7 +27,7 @@ return new class extends Migration
                 });
             } catch (QueryException $e) {
                 // If column already exists, ignore the error
-                if (str_contains($e->getMessage(), 'Duplicate column name')) {
+                if (str_contains(strtolower($e->getMessage()), 'duplicate column name')) {
                     continue;
                 }
                 throw $e;
@@ -45,8 +45,8 @@ return new class extends Migration
                 });
             } catch (QueryException $e) {
                 // If column doesn't exist or foreign key doesn't exist, ignore
-                if (str_contains($e->getMessage(), 'Unknown column') ||
-                    str_contains($e->getMessage(), 'Cannot drop index')) {
+                if (str_contains(strtolower($e->getMessage()), 'unknown column') ||
+                    str_contains(strtolower($e->getMessage()), 'cannot drop index')) {
                     continue;
                 }
                 throw $e;

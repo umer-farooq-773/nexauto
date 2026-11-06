@@ -29,6 +29,43 @@
         {{-- ===================== MAIN DETAIL INCLUDE ===================== --}}
         @include('auth.pages.waybill.show-detail')
 
+        @php
+            $displayDriverPlans = $data->driverPlans->filter(fn ($plan) => $plan->driver)->values();
+            if ($displayDriverPlans->isEmpty() && $data->driver) {
+                $displayDriverPlans = collect([(object) [
+                    'driver' => $data->driver,
+                    'sequence' => 1,
+                    'planned_seconds' => null,
+                    'status' => 'pending',
+                ]]);
+            }
+        @endphp
+        <div class="card border-0 shadow-sm rounded-4 mt-4">
+            <div class="card-header bg-white border-0 pt-4 px-4">
+                <h5 class="mb-1"><i class="ri-steering-2-line text-primary me-2"></i>{{ __('Drivers') }}</h5>
+                <small class="text-muted">{{ __('Drivers in planned driving order') }}</small>
+            </div>
+            <div class="card-body px-4 pb-4">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th>{{ __('Order') }}</th><th>{{ __('Driver') }}</th><th>{{ __('Planned time') }}</th><th>{{ __('Status') }}</th></tr></thead>
+                        <tbody>
+                            @forelse ($displayDriverPlans as $plan)
+                                <tr>
+                                    <td>{{ $loop->iteration }}</td>
+                                    <td>{{ $plan->driver->full_name }}</td>
+                                    <td>{{ $plan->planned_seconds ? rtrim(rtrim(number_format($plan->planned_seconds / 60, 1), '0'), '.') . ' min' : __('Until trip end') }}</td>
+                                    <td><span class="badge bg-light text-dark border">{{ ucfirst($plan->status ?? 'pending') }}</span></td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="4" class="text-muted">{{ __('No driver assigned') }}</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         {{-- ===================== RELATED INCIDENT RECORDS ===================== --}}
         @if($incidents->isNotEmpty())
         <div class="mt-4">

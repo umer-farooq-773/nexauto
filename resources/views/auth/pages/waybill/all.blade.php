@@ -51,7 +51,17 @@
                     @foreach ($data['all'] as $waybill)
                         <tr>
                             <td><a href="{{ route('waybill.show', $waybill->id) }}">{{ $waybill->waybill_number }}</a></td>
-                            <td>{{ $waybill->driver?->full_name ?? '-' }}</td>
+                            <td>
+                                @php
+                                    $listedDrivers = $waybill->driverPlans->filter(fn ($plan) => $plan->driver)->map(fn ($plan) => $plan->driver->full_name)->values();
+                                    if ($listedDrivers->isEmpty() && $waybill->driver) $listedDrivers->push($waybill->driver->full_name);
+                                @endphp
+                                {{ $listedDrivers->first() ?? '-' }}
+                                @if ($listedDrivers->count() > 1)
+                                    <span class="badge bg-light text-primary border" title="{{ $listedDrivers->slice(1)->implode(', ') }}" data-bs-toggle="tooltip">+{{ $listedDrivers->count() - 1 }}</span>
+                                    <span class="visually-hidden">{{ $listedDrivers->slice(1)->implode(', ') }}</span>
+                                @endif
+                            </td>
                             <td>{{ $waybill->vehicle?->fleet_no ?? '-' }} - {{ $waybill->vehicle?->truck_no ?? '' }}</td>
                             <td>
                                 @if ($waybill->origin && $waybill->destination)

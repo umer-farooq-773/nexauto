@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Notifications\WaybillStatusChangedNotification;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Illuminate\Validation\ValidationException;
 use App\Constants\Constants;
 use App\Models\RouteDiversion;
 use App\Models\DriverMisconduct;
@@ -608,7 +609,8 @@ class WaybillController extends BaseController
     {
         try {
             $waybill = $this->_repo->store(WaybillDto::fromRequest($request->validated()));
-            $waybill->loadMissing(['vehicle', 'driver.user']);
+            $waybill->loadMissing(['vehicle.drivers', 'driver.user', 'driverPlans.driver']);
+            $warnings = $this->waybillDriverWarnings($waybill, (array) $request->attributes->get('waybill_driver_warnings', []));
 
             if ($request->hasFile('document')) {
                 $uploaded = $waybill->uploadFile($request->file('document'), 'waybills/documents/');
@@ -620,9 +622,11 @@ class WaybillController extends BaseController
                 ]);
             }
 
+            $routeSync = null;
             try {
-                $this->syncWialonRouteForWaybill($waybill);
+                $routeSync = $this->syncWialonRouteForWaybill($waybill);
             } catch (\Throwable $syncEx) {
+                $routeSync = ['success' => false, 'unit_assigned' => false, 'error' => $syncEx->getMessage()];
                 \Illuminate\Support\Facades\Log::warning('Wialon route sync failed during waybill store', [
                     'waybill_id' => $waybill->id,
                     'error' => $syncEx->getMessage(),
@@ -638,8 +642,20 @@ class WaybillController extends BaseController
                 ]);
             }
 
-            return redirect()->route($this->_route . '.index')->with('success', __('language.successfully_created'));
+            $redirect = redirect()->route($this->_route . '.index');
+            if (($routeSync['unit_assigned'] ?? true) !== true) {
+                $warnings[] = 'The vehicle could not be assigned to the Wialon route: ' . ($routeSync['error'] ?? 'Unknown Wialon sync error.');
+            }
+
+            if ($warnings !== []) {
+                return $redirect->with('warning', 'Waybill saved. ' . implode(' ', array_unique($warnings)));
+            }
+
+            return $redirect->with('success', __('language.successfully_created'));
         } catch (\Throwable $th) {
+            if ($th instanceof ValidationException) {
+                throw $th;
+            }
             \Illuminate\Support\Facades\Log::error('Waybill store exception', [
                 'error' => $th->getMessage(),
                 'trace' => $th->getTraceAsString(),
@@ -653,6 +669,8 @@ class WaybillController extends BaseController
         try {
             $this->_repo->update($id, WaybillDto::fromRequest($request->validated()));
             $waybill = $this->_repo->show($id);
+            $waybill->loadMissing(['vehicle.drivers', 'driverPlans.driver']);
+            $warnings = $this->waybillDriverWarnings($waybill, (array) $request->attributes->get('waybill_driver_warnings', []));
 
             if ($request->hasFile('document')) {
                 $uploaded = $waybill->uploadFile($request->file('document'), 'waybills/documents/');
@@ -674,17 +692,31 @@ class WaybillController extends BaseController
                 }
             }
 
+            $routeSync = null;
             try {
-                $this->syncWialonRouteForWaybill($waybill);
+                $routeSync = $this->syncWialonRouteForWaybill($waybill);
             } catch (\Throwable $syncEx) {
+                $routeSync = ['success' => false, 'unit_assigned' => false, 'error' => $syncEx->getMessage()];
                 \Illuminate\Support\Facades\Log::warning('Wialon route sync failed during waybill update', [
                     'waybill_id' => $waybill->id,
                     'error' => $syncEx->getMessage(),
                 ]);
             }
 
-            return redirect()->route($this->_route . '.index')->with('success', __('language.updated_successfully'));
+            $redirect = redirect()->route($this->_route . '.index');
+            if (($routeSync['unit_assigned'] ?? true) !== true) {
+                $warnings[] = 'The vehicle could not be assigned to the Wialon route: ' . ($routeSync['error'] ?? 'Unknown Wialon sync error.');
+            }
+
+            if ($warnings !== []) {
+                return $redirect->with('warning', 'Waybill saved. ' . implode(' ', array_unique($warnings)));
+            }
+
+            return $redirect->with('success', __('language.updated_successfully'));
         } catch (\Throwable $th) {
+            if ($th instanceof ValidationException) {
+                throw $th;
+            }
             if ($th instanceof NotFoundHttpException) {
                 return redirect()->route($this->_route . '.index')->with('error', $th->getMessage());
             }
@@ -716,7 +748,7 @@ class WaybillController extends BaseController
                 }
             }
 
-            return redirect()->route($this->_route . '.index')->with('success', __('language.successfully_created'));
+            return redirect()->route($this->_route . '.index')->with('success', __('language.deleted_successfully'));
         } catch (\Throwable $th) {
             if ($th instanceof NotFoundHttpException) {
                 return redirect()->route($this->_route . '.index')->with('error', $th->getMessage());
@@ -731,10 +763,10 @@ class WaybillController extends BaseController
         }
     }
 
-    protected function syncWialonRouteForWaybill($waybill): void
+    protected function syncWialonRouteForWaybill($waybill): ?array
     {
         if (empty($waybill->vehicle) || empty($waybill->vehicle->gps_unit_id)) {
-            return;
+            return null;
         }
 
         $wialonService = app(\App\Services\WialonService::class);
@@ -749,6 +781,7 @@ class WaybillController extends BaseController
             'destination_lng'  => $waybill->destination_lng,
             'checkpoints'      => $waybill->checkpoints,
             'wialon_route_id'  => $waybill->wialon_route_id,
+            'gps_imei'         => $waybill->vehicle->gps_imei,
         ];
 
         $result = $wialonService->syncWaybillRoute($waybill->vehicle->gps_unit_id, $waybillData);
@@ -757,6 +790,20 @@ class WaybillController extends BaseController
             $waybill->wialon_route_id = $result['wialon_route_id'];
             $waybill->save();
         }
+
+        return $result;
+    }
+
+    private function waybillDriverWarnings(Waybill $waybill, array $warnings): array
+    {
+        $assignedDriverIds = $waybill->vehicle?->drivers?->pluck('id')->map(fn ($id) => (string) $id)->all() ?? [];
+        foreach ($waybill->driverPlans as $plan) {
+            if ($plan->driver && !in_array((string) $plan->driver_id, $assignedDriverIds, true)) {
+                $warnings[] = $plan->driver->full_name . ' is not assigned to the selected vehicle.';
+            }
+        }
+
+        return array_values(array_unique($warnings));
     }
 
     public function edit($id)
@@ -782,12 +829,17 @@ class WaybillController extends BaseController
         }
 
         $assigned = $vehicle->drivers()->get();
+        $hasAssignedDrivers = $assigned->isNotEmpty();
 
-        if ($assigned->isEmpty()) {
+        if (!$hasAssignedDrivers) {
             $assigned = app()->make('App\Interfaces\DriverDetailInterface')->all();
         }
 
-        $drivers = $assigned->map(fn($d) => ['id' => $d->id, 'name' => trim($d->first_name . ' ' . $d->last_name)]);
+        $drivers = $assigned->map(fn($d) => [
+            'id' => $d->id,
+            'name' => $d->full_name,
+            'assigned' => $hasAssignedDrivers,
+        ]);
         return response()->json($drivers);
     }
 

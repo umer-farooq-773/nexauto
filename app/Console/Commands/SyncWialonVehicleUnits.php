@@ -247,11 +247,13 @@ class SyncWialonVehicleUnits extends Command
                     'gps_imei'       => $unit['imei'],
                     'gps_provider'   => 'wialon',
                     'last_sync_at'   => $now,
+                    'gps_sync_error' => null,
                 ];
                 $changed = (string) $vehicle->gps_unit_id !== (string) $unit['id']
                     || (string) $vehicle->gps_hw_type_id !== (string) ($unit['hw_type_id'] ?? '')
                     || $this->emptyToNull($vehicle->gps_imei) !== $unit['imei']
-                    || $vehicle->gps_provider !== 'wialon';
+                    || $vehicle->gps_provider !== 'wialon'
+                    || $vehicle->gps_sync_error !== null;
 
                 if ($changed) {
                     $result['updated']++;
@@ -264,7 +266,7 @@ class SyncWialonVehicleUnits extends Command
                     $result['unchanged']++;
 
                     if (! $dryRun) {
-                        $vehicle->forceFill(['last_sync_at' => $now])->save();
+                        $vehicle->forceFill(['last_sync_at' => $now, 'gps_sync_error' => null])->save();
                     }
                 }
 

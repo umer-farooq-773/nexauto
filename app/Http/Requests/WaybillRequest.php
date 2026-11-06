@@ -4,6 +4,9 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
+use App\Interfaces\WaybillInterface;
+use App\Models\DriverDetail;
 
 class WaybillRequest extends FormRequest
 {
@@ -14,6 +17,18 @@ class WaybillRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (!$this->exists('drivers') && $this->filled('driver_id')) {
+            $this->merge(['drivers' => [[
+                'driver_id' => $this->input('driver_id'),
+                'duration_minutes' => null,
+            ]]]);
+        }
+
+        $driverRows = $this->input('drivers');
+        if (is_array($driverRows) && isset($driverRows[0]['driver_id'])) {
+            $this->merge(['driver_id' => $driverRows[0]['driver_id']]);
+        }
+
         $normalizeUnit = function ($unit) {
             if (!$unit) return $unit;
             $u = strtoupper(trim($unit));
@@ -94,10 +109,14 @@ class WaybillRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        $drivers = $this->input('drivers', []);
+        $driverCount = is_array($drivers) ? count($drivers) : 0;
+        $rules = [
             'waybill_number'          => ['required', 'string', 'max:100', Rule::unique('waybills', 'waybill_number')->ignore($this->route('waybill'))],
             'vehicle_id'              => ['required', 'uuid', 'exists:vehicles,id'],
             'driver_id'               => ['required', 'uuid', 'exists:driver_details,id'],
+            'drivers'                 => ['required', 'array', 'min:1'],
+            'drivers.*.driver_id'     => ['required', 'uuid', 'distinct:strict', 'exists:driver_details,id'],
             'status_id'               => ['required', 'uuid', 'exists:statuses,id'],
             'route_trip_id'           => ['nullable', 'uuid', 'exists:route_trips,id'],
             'origin'                  => ['nullable', 'string', 'max:255'],
@@ -134,6 +153,49 @@ class WaybillRequest extends FormRequest
             'cargos.*.weight_unit'    => ['nullable', 'string'],
             'cargos.*.volume_unit'    => ['nullable', 'string'],
         ];
+
+        foreach (is_array($drivers) ? array_keys($drivers) : [] as $index) {
+            $durationRequired = $driverCount > 1 && $index < $driverCount - 1;
+            $rules["drivers.{$index}.duration_minutes"] = $durationRequired
+                ? ['required', 'integer', 'min:1']
+                : ['nullable', 'integer', 'min:1'];
+        }
+
+        return $rules;
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $drivers = $this->input('drivers', []);
+            if (!is_array($drivers) || $drivers === []) {
+                return;
+            }
+
+            $driverIds = array_values(array_filter(array_map(
+                fn ($row) => is_array($row) ? ($row['driver_id'] ?? null) : null,
+                $drivers,
+            )));
+            if (count($driverIds) !== count(array_unique($driverIds))
+                || DriverDetail::whereIn('id', $driverIds)->count() !== count($driverIds)) {
+                return;
+            }
+
+            $conflicts = app(WaybillInterface::class)->driversBusy(
+                $driverIds,
+                $this->route('waybill') ? (string) $this->route('waybill') : null,
+            );
+
+            $blocking = array_values(array_filter($conflicts, fn (array $row) => in_array((int) $row['status_value'], [1, 2, 5], true)));
+            if ($blocking !== []) {
+                $messages = array_map(fn (array $row) => sprintf('%s is already assigned to waybill %s (%s).', $row['driver_name'], $row['waybill_number'], $row['status_label']), $blocking);
+                $validator->errors()->add('drivers', implode(' ', array_unique($messages)));
+            }
+
+            $awaiting = array_values(array_filter($conflicts, fn (array $row) => (int) $row['status_value'] === 0));
+            $warnings = array_map(fn (array $row) => sprintf('%s is also listed on awaiting waybill %s.', $row['driver_name'], $row['waybill_number']), $awaiting);
+            $this->attributes->set('waybill_driver_warnings', array_values(array_unique($warnings)));
+        });
     }
 }
 
