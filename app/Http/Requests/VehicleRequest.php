@@ -56,6 +56,19 @@ class VehicleRequest extends FormRequest
             'gps_provider' => ['nullable','string','max:30','in:wialon,tracksolid,other'],
             'gps_status' => ['nullable','boolean'],
 
+            'wialon_movement_type' => ['required', 'integer', 'between:1,5'],
+            'wialon_gps_correction' => ['required', 'boolean'],
+            'wialon_min_satellites' => ['required', 'integer', 'min:0', 'max:255'],
+            'min_moving_speed_kmh' => ['required', 'integer', 'min:0', 'max:65535'],
+            'min_parking_seconds' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'max_messages_distance_m' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'min_trip_seconds' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'min_trip_distance_m' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            'speed_limit_kmh' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'speeding_tolerance_kmh' => ['nullable', 'integer', 'min:0', 'max:65535'],
+            'speeding_min_duration_s' => ['nullable', 'integer', 'min:0', 'max:4294967295'],
+            'speeding_mode' => ['required', 'integer', 'in:0,1'],
+
             'gps_imei' => [
                 Rule::requiredIf(fn () => $this->input('gps_provider') === 'wialon'),
                 'nullable',

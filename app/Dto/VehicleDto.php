@@ -41,6 +41,15 @@ class VehicleDto
 
     public $drivers;
 
+    private const WIALON_SETTING_FIELDS = [
+        'wialon_movement_type', 'wialon_gps_correction', 'wialon_min_satellites',
+        'min_moving_speed_kmh', 'min_parking_seconds', 'max_messages_distance_m',
+        'min_trip_seconds', 'min_trip_distance_m', 'speed_limit_kmh',
+        'speeding_tolerance_kmh', 'speeding_min_duration_s', 'speeding_mode',
+    ];
+
+    private array $wialonSettings = [];
+
 
     /**
      * Create a new DTO instance.
@@ -195,6 +204,25 @@ class VehicleDto
         $this->status = $request['status'];
 
         $this->drivers = $request['drivers'] ?? [];
+
+        $defaults = config('trips.defaults', []);
+        foreach (self::WIALON_SETTING_FIELDS as $field) {
+            $value = $request[$field] ?? null;
+            if ($field === 'wialon_gps_correction') {
+                $this->wialonSettings[$field] = array_key_exists($field, $request)
+                    ? (bool) $request[$field]
+                    : (bool) ($defaults[$field] ?? true);
+            } elseif (in_array($field, ['speeding_tolerance_kmh', 'speeding_min_duration_s'], true)) {
+                $default = $defaults[$field] ?? null;
+                $this->wialonSettings[$field] = ($value === '' || $value === null)
+                    ? (($default === '' || $default === null) ? null : (int) $default)
+                    : (int) $value;
+            } else {
+                $this->wialonSettings[$field] = ($value === '' || $value === null)
+                    ? ($defaults[$field] ?? null)
+                    : (int) $value;
+            }
+        }
     }
 
 
@@ -240,7 +268,7 @@ class VehicleDto
             'base_site' => $this->base_site,
 
             'status' => $this->status,
-        ];
+        ] + $this->wialonSettings;
     }
 
 }

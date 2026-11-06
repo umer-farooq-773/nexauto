@@ -7,6 +7,8 @@ use App\Dto\VehicleDto;
 use App\Models\Vehicle;
 use App\Models\GpsDeviceType;
 use App\Services\WialonService;
+use App\Services\WialonVehicleSettingsSyncLogger;
+use App\Exceptions\WialonSettingsSyncException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -59,6 +61,7 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
 
             // Prepare Wialon sync data if provider is Wialon
             $shouldSyncWialon = false;
+            $settingsWarning = null;
             $hwTypeId = null;
             $unitName = null;
 
@@ -197,6 +200,24 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
                         throw new \RuntimeException('Wialon returned invalid unit ID: ' . $wialonUnitId);
                     }
 
+                    // Trip and speeding settings are deliberately non-fatal on create.
+                    // Unit provisioning and its duplicate checks remain authoritative.
+                    $vehicleSettings = $this->vehicleSettings($dataArray);
+                    try {
+                        $this->wialon->pushUnitSettings($wialonUnitId, $vehicleSettings);
+                        $vehicle->update(['wialon_settings_synced_at' => now()]);
+                        $this->recordSettingsSync($vehicle, 'push', 'success', $vehicleSettings);
+                    } catch (\Throwable $settingsException) {
+                        $settingsWarning = 'Vehicle created, but Wialon settings could not be saved: ' . $settingsException->getMessage();
+                        $vehicle->update(['wialon_settings_synced_at' => null]);
+                        $this->recordSettingsSync($vehicle, 'push', 'failed', $vehicleSettings, $settingsException->getMessage());
+                        Log::warning('Non-fatal: Wialon vehicle settings update failed during creation', [
+                            'vehicle_id' => $vehicle->id,
+                            'wialon_unit_id' => $wialonUnitId,
+                            'error' => $settingsException->getMessage(),
+                        ]);
+                    }
+
                     // SUCCESS - Update vehicle with real Wialon unit ID
                     $vehicle->update([
                         'gps_unit_id' => $wialonUnitId,
@@ -250,7 +271,7 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
                 }
             }
 
-            return true;
+            return ['warning' => $settingsWarning];
         });
     }
 
@@ -272,6 +293,8 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
         $newFleetNo = $dataArray['fleet_no'] ?? $result->fleet_no;
         $newVehicleType = $dataArray['vehicle_type'] ?? $result->vehicle_type;
         $newPhoneNumber = $dataArray['phone_number'] ?? $result->phone_number;
+        $settingsPushed = false;
+        $settingsPushedPayload = [];
 
         // ALWAYS validate uniqueness of Fleet Number if it's being changed
         if (array_key_exists('fleet_no', $dataArray) && $dataArray['fleet_no'] !== $result->fleet_no) {
@@ -286,6 +309,29 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
             $checkTruckNo = $dataArray['truck_no'];
             if (!empty($checkTruckNo) && Vehicle::where('truck_no', $checkTruckNo)->where('id', '!=', $result->id)->exists()) {
                 throw new \InvalidArgumentException("Vehicle Registration Number {$checkTruckNo} is already assigned to another vehicle in the system.");
+            }
+        }
+
+        // Re-push settings on every edit. This also repairs Wialon when it has
+        // drifted from the local values even though the form values did not change.
+        if (!empty($result->gps_unit_id) && $gpsProvider === 'wialon') {
+            $settings = $this->vehicleSettings($dataArray);
+            $storedUnitId = (string) $result->gps_unit_id;
+            $unitId = filter_var($storedUnitId, FILTER_VALIDATE_INT);
+            if (!$unitId || $unitId <= 0 || strlen($storedUnitId) >= 13) {
+                $message = 'Cannot sync Wialon settings because this vehicle does not have a valid numeric Wialon unit ID.';
+                $this->recordSettingsSync($result, 'push', 'failed', $settings, $message);
+                throw new WialonSettingsSyncException($message);
+            }
+
+            try {
+                $this->wialon->pushUnitSettings((int) $unitId, $settings);
+                $dataArray['wialon_settings_synced_at'] = now();
+                $settingsPushed = true;
+                $settingsPushedPayload = $settings;
+            } catch (\Throwable $settingsException) {
+                $this->recordSettingsSync($result, 'push', 'failed', $settings, $settingsException->getMessage());
+                throw new WialonSettingsSyncException($settingsException->getMessage(), 0, $settingsException);
             }
         }
 
@@ -452,7 +498,27 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
             }
         }
 
+        // A previously unlinked vehicle may have just received a new unit above.
+        // Push its settings before saving them locally; unlike create, an edit
+        // must fail visibly if the settings could not be written.
+        if (empty($result->gps_unit_id) && !empty($dataArray['gps_unit_id']) && $gpsProvider === 'wialon') {
+            $settings = $this->vehicleSettings($dataArray);
+            try {
+                $this->wialon->pushUnitSettings((int) $dataArray['gps_unit_id'], $settings);
+                $dataArray['wialon_settings_synced_at'] = now();
+                $settingsPushed = true;
+                $settingsPushedPayload = $settings;
+            } catch (\Throwable $settingsException) {
+                $this->recordSettingsSync($result, 'push', 'failed', $settings, $settingsException->getMessage());
+                throw new WialonSettingsSyncException($settingsException->getMessage(), 0, $settingsException);
+            }
+        }
+
         $result->update($dataArray);
+
+        if ($settingsPushed) {
+            $this->recordSettingsSync($result, 'push', 'success', $settingsPushedPayload);
+        }
 
         if (!empty($drivers)) {
             try {
@@ -467,6 +533,24 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
         }
 
         return $result;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function vehicleSettings(array $attributes): array
+    {
+        $fields = [
+            'wialon_movement_type', 'wialon_gps_correction', 'wialon_min_satellites',
+            'min_moving_speed_kmh', 'min_parking_seconds', 'max_messages_distance_m',
+            'min_trip_seconds', 'min_trip_distance_m', 'speed_limit_kmh',
+            'speeding_tolerance_kmh', 'speeding_min_duration_s', 'speeding_mode',
+        ];
+
+        return array_intersect_key($attributes, array_flip($fields));
+    }
+
+    private function recordSettingsSync(Vehicle $vehicle, string $direction, string $status, array $settings, ?string $error = null): void
+    {
+        app(WialonVehicleSettingsSyncLogger::class)->record($vehicle, $direction, $status, $settings, $error);
     }
 
     /**

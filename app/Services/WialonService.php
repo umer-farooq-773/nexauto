@@ -198,6 +198,134 @@ class WialonService
         }
     }
 
+    /** Read Wialon's trip detector settings for a unit. */
+    public function getUnitTripDetector(int $unitId): array
+    {
+        return $this->request('unit/get_trip_detector', ['itemId' => $unitId]);
+    }
+
+    /** Update all trip detector fields; Wialon requires a complete detector payload. */
+    public function updateUnitTripDetector(int $unitId, array $settings): array
+    {
+        $payload = [
+            'itemId' => $unitId,
+            'type' => (int) ($settings['wialon_movement_type'] ?? $settings['type'] ?? 1),
+            'gpsCorrection' => (bool) ($settings['wialon_gps_correction'] ?? $settings['gpsCorrection'] ?? true),
+            'minSat' => (int) ($settings['wialon_min_satellites'] ?? $settings['minSat'] ?? 2),
+            'minMovingSpeed' => (int) ($settings['min_moving_speed_kmh'] ?? $settings['minMovingSpeed'] ?? 1),
+            'minStayTime' => (int) ($settings['min_parking_seconds'] ?? $settings['minStayTime'] ?? 300),
+            'maxMessagesDistance' => (int) ($settings['max_messages_distance_m'] ?? $settings['maxMessagesDistance'] ?? 10000),
+            'minTripTime' => (int) ($settings['min_trip_seconds'] ?? $settings['minTripTime'] ?? 60),
+            'minTripDistance' => (int) ($settings['min_trip_distance_m'] ?? $settings['minTripDistance'] ?? 100),
+        ];
+
+        try {
+            return $this->request('unit/update_trip_detector', $payload);
+        } catch (\RuntimeException $e) {
+            throw $this->withSettingsRightMessage($e);
+        }
+    }
+
+    /** Read all report settings, including speed limit, from Wialon. */
+    public function getUnitReportSettings(int $unitId): array
+    {
+        return $this->request('unit/get_report_settings', ['itemId' => $unitId]);
+    }
+
+    /** Update only supplied report settings; omitted/null values are left unchanged. */
+    public function updateUnitReportSettings(int $unitId, array $settings): array
+    {
+        $mapping = [
+            'speed_limit_kmh' => 'speedLimit',
+            'speeding_tolerance_kmh' => 'speedingTolerance',
+            'speeding_min_duration_s' => 'speedingMinDuration',
+            'speeding_mode' => 'speedingMode',
+        ];
+        $params = [];
+        foreach ($mapping as $vehicleKey => $wialonKey) {
+            $value = $settings[$vehicleKey] ?? $settings[$wialonKey] ?? null;
+            if ($value !== null && $value !== '') {
+                $params[$wialonKey] = (int) $value;
+            }
+        }
+
+        if ($params === []) {
+            return [];
+        }
+
+        try {
+            return $this->request('unit/update_report_settings', [
+                'itemId' => $unitId,
+                'params' => $params,
+            ]);
+        } catch (\RuntimeException $e) {
+            throw $this->withSettingsRightMessage($e);
+        }
+    }
+
+    /** Pull Wialon settings into the vehicle's normalized column names. */
+    public function pullUnitSettings(int $unitId): array
+    {
+        $trip = $this->getUnitTripDetector($unitId);
+        $report = $this->getUnitReportSettings($unitId);
+
+        return [
+            'wialon_movement_type' => (int) ($trip['type'] ?? 1),
+            'wialon_gps_correction' => (bool) ($trip['gpsCorrection'] ?? true),
+            'wialon_min_satellites' => (int) ($trip['minSat'] ?? 2),
+            'min_moving_speed_kmh' => (int) ($trip['minMovingSpeed'] ?? 1),
+            'min_parking_seconds' => (int) ($trip['minStayTime'] ?? 300),
+            'max_messages_distance_m' => (int) ($trip['maxMessagesDistance'] ?? 10000),
+            'min_trip_seconds' => (int) ($trip['minTripTime'] ?? 60),
+            'min_trip_distance_m' => (int) ($trip['minTripDistance'] ?? 100),
+            'speed_limit_kmh' => isset($report['speedLimit']) ? (int) $report['speedLimit'] : null,
+            'speeding_tolerance_kmh' => isset($report['speedingTolerance']) ? (int) $report['speedingTolerance'] : null,
+            'speeding_min_duration_s' => isset($report['speedingMinDuration']) ? (int) $report['speedingMinDuration'] : null,
+            'speeding_mode' => isset($report['speedingMode']) ? (int) $report['speedingMode'] : 0,
+        ];
+    }
+
+    /** Push vehicle settings to Wialon and return the normalized settings sent. */
+    public function pushUnitSettings(int $unitId, array $vehicleSettings): array
+    {
+        $this->updateUnitTripDetector($unitId, $vehicleSettings);
+        $this->updateUnitReportSettings($unitId, $vehicleSettings);
+
+        // Wialon returns an empty object on update. Read the values back so the
+        // caller can detect rights, server-side validation, or persistence issues.
+        $confirmed = $this->pullUnitSettings($unitId);
+        foreach ($vehicleSettings as $field => $expected) {
+            if (!array_key_exists($field, $confirmed) || $expected === null || $expected === '') {
+                continue;
+            }
+
+            if ($field === 'wialon_gps_correction') {
+                $matches = (bool) $expected === (bool) $confirmed[$field];
+            } else {
+                $matches = (int) $expected === (int) $confirmed[$field];
+            }
+
+            if (!$matches) {
+                throw new \RuntimeException("Wialon did not confirm saving the {$field} setting.");
+            }
+        }
+
+        return $confirmed;
+    }
+
+    private function withSettingsRightMessage(\RuntimeException $exception): \RuntimeException
+    {
+        if (str_contains(strtolower($exception->getMessage()), 'error 7')) {
+            return new \RuntimeException(
+                'Wialon API error 7: the API user needs the "edit report settings" right on the unit.',
+                0,
+                $exception,
+            );
+        }
+
+        return $exception;
+    }
+
     /**
      * Get human-readable error message for Wialon error codes
      */

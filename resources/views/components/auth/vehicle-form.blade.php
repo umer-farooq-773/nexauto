@@ -10,6 +10,7 @@
         $currentMakeModelId     = old('make_model', old('vehicle_make_model_id', $result?->vehicle_make_model_id ?? ''));
         $currentGpsDeviceTypeId = old('gps_device_type_id', \App\Models\GpsDeviceType::where('wialon_hw_type_id', $result?->gps_hw_type_id)->value('id'));
         $currentStatus          = old('status', $result?->status);
+        $tripDefaults           = config('trips.defaults', []);
     @endphp
 
     <!-- Hidden GPS Provider -->
@@ -309,6 +310,109 @@
                             </div>
                         @endif
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GPS / Wialon Settings Section -->
+        <div class="col-12">
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-header bg-transparent border-bottom-0 pt-4 px-4">
+                    <div class="d-flex align-items-center">
+                        <div class="icon-circle bg-info-soft me-3"><i class="fas fa-sliders-h text-info"></i></div>
+                        <h5 class="mb-0 fw-bold text-dark">{{ __('GPS / Wialon settings') }}</h5>
+                    </div>
+                </div>
+                <div class="card-body p-4 pt-3">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="wialon_movement_type">{{ __('Movement detection') }}</label>
+                            <select class="form-control @error('wialon_movement_type') is-invalid @enderror" name="wialon_movement_type" id="wialon_movement_type" required>
+                                @foreach([1 => 'GPS speed', 2 => 'GPS coordinates', 3 => 'Engine ignition sensor', 4 => 'Mileage sensor', 5 => 'Relative odometer'] as $value => $label)
+                                    <option value="{{ $value }}" @selected((string) old('wialon_movement_type', $result?->wialon_movement_type ?? ($tripDefaults['wialon_movement_type'] ?? 1)) === (string) $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            @error('wialon_movement_type')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        </div>
+                        @php
+                            $settingsFields = [
+                                'min_moving_speed_kmh' => ['Minimum moving speed (km/h)', 'min_moving_speed_kmh', 1],
+                                'min_parking_seconds' => ['Minimum parking time (s)', 'min_parking_seconds', 300],
+                                'wialon_min_satellites' => ['Minimum satellites', 'wialon_min_satellites', 2],
+                                'max_messages_distance_m' => ['Maximum distance between messages (m)', 'max_messages_distance_m', 10000],
+                                'min_trip_seconds' => ['Minimum trip time (s)', 'min_trip_seconds', 60],
+                                'min_trip_distance_m' => ['Minimum trip distance (m)', 'min_trip_distance_m', 100],
+                                'speed_limit_kmh' => ['Speed limit (km/h)', 'speed_limit_kmh', 80],
+                                'speeding_tolerance_kmh' => ['Speeding tolerance (km/h)', 'speeding_tolerance_kmh', null],
+                                'speeding_min_duration_s' => ['Minimum speeding duration (s)', 'speeding_min_duration_s', null],
+                            ];
+                        @endphp
+                        @foreach($settingsFields as $field => [$label, $defaultKey, $fallback])
+                            @php $value = old($field, $result?->{$field} ?? ($tripDefaults[$defaultKey] ?? $fallback)); @endphp
+                            <div class="col-md-6">
+                                <div class="form-floating mb-1">
+                                    <input type="number" min="0" name="{{ $field }}" id="{{ $field }}" class="form-control @error($field) is-invalid @enderror" placeholder=" " value="{{ $value }}" @if(!in_array($field, ['speeding_tolerance_kmh', 'speeding_min_duration_s'], true)) required @endif>
+                                    <label for="{{ $field }}">{{ __($label) }}</label>
+                                </div>
+                                @error($field)<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                                @if($field === 'min_moving_speed_kmh')<small class="text-muted">{{ __('Min moving speed decides when the vehicle counts as moving') }}</small>@endif
+                                @if($field === 'speed_limit_kmh')<small class="text-muted">{{ __('Speed limit decides when the driver counts as speeding') }}</small>@endif
+                            </div>
+                        @endforeach
+                        <div class="col-md-6">
+                            <input type="hidden" name="wialon_gps_correction" value="0">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="wialon_gps_correction" id="wialon_gps_correction" value="1" @checked((bool) old('wialon_gps_correction', $result?->wialon_gps_correction ?? ($tripDefaults['wialon_gps_correction'] ?? true)))>
+                                <label class="form-check-label" for="wialon_gps_correction">{{ __('Allow GPS correction') }}</label>
+                            </div>
+                            @error('wialon_gps_correction')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="speeding_mode">{{ __('Speeding detection mode') }}</label>
+                            <select class="form-control" name="speeding_mode" id="speeding_mode" required>
+                                <option value="0" @selected((string) old('speeding_mode', $result?->speeding_mode ?? ($tripDefaults['speeding_mode'] ?? 0)) === '0')>{{ __('Use speed limit') }}</option>
+                                <option value="1" @selected((string) old('speeding_mode', $result?->speeding_mode ?? ($tripDefaults['speeding_mode'] ?? 0)) === '1')>{{ __('Use map data') }}</option>
+                            </select>
+                        </div>
+                    </div>
+                    @if($isEdit && $result?->relationLoaded('wialonSettingSyncLogs'))
+                        <div class="mt-4 pt-3 border-top">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0 fw-bold">{{ __('Wialon settings sync history') }}</h6>
+                                <small class="text-muted">
+                                    {{ __('Last successful sync') }}:
+                                    {{ $result->wialon_settings_synced_at?->format('Y-m-d H:i:s') ?? __('Never') }}
+                                </small>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead><tr><th>{{ __('Date') }}</th><th>{{ __('Direction') }}</th><th>{{ __('Result') }}</th><th>{{ __('Details') }}</th><th>{{ __('User') }}</th></tr></thead>
+                                    <tbody>
+                                        @forelse($result->wialonSettingSyncLogs->take(10) as $syncLog)
+                                            <tr>
+                                                <td>{{ $syncLog->created_at?->format('Y-m-d H:i:s') }}</td>
+                                                <td>{{ strtoupper($syncLog->direction) }}</td>
+                                                <td><span class="badge bg-{{ $syncLog->status === 'success' ? 'success' : 'danger' }}">{{ strtoupper($syncLog->status) }}</span></td>
+                                                <td>
+                                                    @if($syncLog->error)
+                                                        {{ $syncLog->error }}
+                                                    @else
+                                                        <details>
+                                                            <summary>{{ __('Settings sent successfully') }}</summary>
+                                                            <small class="text-muted">{{ collect($syncLog->settings ?? [])->map(fn ($value, $key) => $key . '=' . ($value === null ? 'null' : $value))->implode(', ') }}</small>
+                                                        </details>
+                                                    @endif
+                                                </td>
+                                                <td>{{ $syncLog->user?->full_name ?? __('System') }}</td>
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="5" class="text-muted text-center">{{ __('No Wialon settings sync attempts yet.') }}</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>

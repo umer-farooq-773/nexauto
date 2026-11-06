@@ -38,14 +38,14 @@
         toastr[type](message, title);
     }
 
-    @if (session('success'))
+    @if (session('warning'))
+        showToaster('warning', '{{ session('warning') }}', 'Warning');
+    @elseif (session('success'))
         showToaster('success', '{{ session('success') }}', 'Success');
     @elseif (session('error'))
         showToaster('error', '{{ session('error') }}', 'Error');
     @elseif (session('info'))
         showToaster('info', '{{ session('info') }}', 'Info');
-    @elseif (session('warning'))
-        showToaster('warning', '{{ session('warning') }}', 'Warning');
     @endif
 </script>
 

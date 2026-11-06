@@ -37,6 +37,19 @@ class Vehicle extends Model
         'gps_sync_status',
         'gps_sync_error',
         'last_sync_at',
+        'wialon_movement_type',
+        'wialon_gps_correction',
+        'wialon_min_satellites',
+        'min_moving_speed_kmh',
+        'min_parking_seconds',
+        'max_messages_distance_m',
+        'min_trip_seconds',
+        'min_trip_distance_m',
+        'speed_limit_kmh',
+        'speeding_tolerance_kmh',
+        'speeding_min_duration_s',
+        'speeding_mode',
+        'wialon_settings_synced_at',
         'last_service_date',
         'next_service_due_date',
         'insurance_expiry_date',
@@ -54,6 +67,19 @@ class Vehicle extends Model
         'vehicle_license_expiry_date' => 'datetime',
         'last_sync_at' => 'datetime',
         'gps_status' => 'boolean',
+        'wialon_movement_type' => 'integer',
+        'wialon_gps_correction' => 'boolean',
+        'wialon_min_satellites' => 'integer',
+        'min_moving_speed_kmh' => 'integer',
+        'min_parking_seconds' => 'integer',
+        'max_messages_distance_m' => 'integer',
+        'min_trip_seconds' => 'integer',
+        'min_trip_distance_m' => 'integer',
+        'speed_limit_kmh' => 'integer',
+        'speeding_tolerance_kmh' => 'integer',
+        'speeding_min_duration_s' => 'integer',
+        'speeding_mode' => 'integer',
+        'wialon_settings_synced_at' => 'datetime',
     ];
 
     protected function serializeDate(DateTimeInterface $date)
@@ -141,5 +167,10 @@ class Vehicle extends Model
     public function maintenances()
     {
         return $this->hasMany(VehicleMaintenance::class, 'vehicle_id')->orderBy('maintenance_date', 'desc');
+    }
+
+    public function wialonSettingSyncLogs()
+    {
+        return $this->hasMany(WialonVehicleSettingsSyncLog::class, 'vehicle_id')->latest();
     }
 }

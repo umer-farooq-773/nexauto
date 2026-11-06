@@ -9,6 +9,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Services\WialonService;
+use App\Services\WialonVehicleSettingsSyncLogger;
 use RuntimeException;
 
 class SyncWialonVehicleUnits extends Command
@@ -263,6 +265,23 @@ class SyncWialonVehicleUnits extends Command
 
                     if (! $dryRun) {
                         $vehicle->forceFill(['last_sync_at' => $now])->save();
+                    }
+                }
+
+                if (! $dryRun) {
+                    try {
+                        $settings = app(WialonService::class)->pullUnitSettings((int) $unit['id']);
+                        $vehicle->forceFill($settings + ['wialon_settings_synced_at' => $now])->save();
+                        app(WialonVehicleSettingsSyncLogger::class)->record($vehicle, 'pull', 'success', $settings);
+                        $this->line(sprintf('Settings synced: %s <- unit %d', $vehicle->fleet_no, $unit['id']));
+                    } catch (\Throwable $exception) {
+                        $this->warn(sprintf('Settings sync failed: %s (unit %d): %s', $vehicle->fleet_no, $unit['id'], $exception->getMessage()));
+                        app(WialonVehicleSettingsSyncLogger::class)->record($vehicle, 'pull', 'failed', [], $exception->getMessage());
+                        Log::warning('Wialon settings pull failed during vehicle sync', [
+                            'vehicle_id' => $vehicle->id,
+                            'wialon_unit_id' => $unit['id'],
+                            'error' => $exception->getMessage(),
+                        ]);
                     }
                 }
             });

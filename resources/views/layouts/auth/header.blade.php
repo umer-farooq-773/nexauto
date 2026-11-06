@@ -80,10 +80,20 @@
                     <span>My Profile</span>
                 </a>
 
-                <a href="#" class="dropdown-item">
+                <a href="{{ route('change_password') }}" class="dropdown-item">
                     <i class="fas fa-cog"></i>
                     <span>Settings</span>
                 </a>
+
+                @can('edit_vehicle')
+                    <form action="{{ route('wialon.sync_vehicle_settings') }}" method="POST">
+                        @csrf
+                        <button type="submit" class="dropdown-item">
+                            <i class="fas fa-sync-alt"></i>
+                            <span>Sync Wialon Data</span>
+                        </button>
+                    </form>
+                @endcan
 
                 <div class="dropdown-divider"></div>
 

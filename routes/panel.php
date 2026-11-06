@@ -37,6 +37,7 @@ use App\Http\Controllers\WialonReportGenerator;
 use App\Http\Controllers\IncidentMapController;
 use App\Http\Controllers\IncidentTrackingController;
 use App\Http\Controllers\VehicleHistoryController;
+use App\Http\Controllers\WialonSettingsSyncController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/logout', [HomeController::class, 'logout'])->name('logout');
@@ -51,6 +52,9 @@ Route::group(
 
         Route::get('profile', [UserController::class, 'editprofile'])->name('myprofile');
         Route::put('edit-my-profile', [UserController::class, 'updatemyprofile'])->name('updatemyprofile');
+        Route::post('wialon/sync-vehicle-settings', [WialonSettingsSyncController::class, 'push'])
+            ->middleware('can:edit_vehicle')
+            ->name('wialon.sync_vehicle_settings');
 
         Route::prefix('export')->name('export.')->group(function () {
             Route::post('/columns', [ExportCsvController::class, 'getColumns'])->name('csv.columns');

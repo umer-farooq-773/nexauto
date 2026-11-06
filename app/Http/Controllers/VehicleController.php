@@ -8,6 +8,7 @@ use App\Http\Requests\VehicleRequest;
 use App\Models\Vehicle;
 use App\Models\VehicleMaintenance;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class VehicleController extends BaseController
@@ -133,14 +134,21 @@ class VehicleController extends BaseController
         $data = $this->_repo->show($id);
         if (!$data) abort(404);
         $data->load('drivers');
+        if (Schema::hasTable('wialon_vehicle_settings_sync_logs')) {
+            $data->load('wialonSettingSyncLogs.user');
+        }
         return view($this->_directory . '.edit', compact('data'));
     }
 
     public function store(VehicleRequest $request)
     {
         try {
-            $this->_repo->store(VehicleDto::fromRequest($request->validated()));
-            return redirect()->route($this->_route . '.list')->with('success', __('language.successfully_created'));
+            $result = $this->_repo->store(VehicleDto::fromRequest($request->validated()));
+            $redirect = redirect()->route($this->_route . '.list')->with('success', __('language.successfully_created'));
+            if (!empty($result['warning'])) {
+                $redirect->with('warning', $result['warning']);
+            }
+            return $redirect;
         } catch (\Throwable $th) {
             \Log::error('Vehicle Store Error: ' . $th->getMessage(), ['exception' => $th]);
             $errorMessage = config('app.debug') ? $th->getMessage() : __('language.something_went_wrong');
@@ -164,6 +172,8 @@ class VehicleController extends BaseController
             if ($th instanceof NotFoundHttpException) {
                 $message = $th->getMessage();
                 return redirect()->route($this->_route . '.list')->with('error', $message);
+            } elseif ($th instanceof \App\Exceptions\WialonSettingsSyncException) {
+                return redirect()->back()->withInput()->with('error', 'Vehicle was not updated because Wialon settings could not be synced: ' . $th->getMessage());
             } else {
                 $errorMessage = config('app.debug') ? $th->getMessage() : __('language.something_went_wrong');
                 return redirect()->route($this->_route . '.list')->with('error', $errorMessage);
