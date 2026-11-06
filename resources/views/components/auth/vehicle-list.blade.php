@@ -1,6 +1,5 @@
 <div class="form-floating mb-3 select2-parent">
     <x-auth.select2 name="vehicle" id="vehicle" class="searchable-select" :data="$list" label="" placeholder="Select Vehicle" :existing-id="$existingId ?? null" />
-    <label for="vehicle">Assign Vehicle *</label>
 </div>
 
 @push('scripts')
