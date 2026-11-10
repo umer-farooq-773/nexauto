@@ -1,6 +1,23 @@
 <?php
 
 return [
+    // Driver trip monitoring runtime. These settings define alert/timer behavior;
+    // vehicle-specific speed and parking rules remain on each Vehicle record.
+    'auto_start_timer' => (bool) env('TRIP_AUTO_START_TIMER', false),
+    'monitor_tick_seconds' => max(1, (int) env('TRIP_MONITOR_TICK_SECONDS', 10)),
+    'stale_message_seconds' => max(1, (int) env('TRIP_STALE_MESSAGE_SECONDS', 120)),
+    'default_speeding_tolerance_kmh' => max(0, (int) env('TRIP_DEFAULT_SPEEDING_TOLERANCE_KMH', 0)),
+    'default_speeding_min_duration_s' => max(1, (int) (env('TRIP_DEFAULT_SPEEDING_MIN_DURATION_S') ?: 30)),
+    'speeding_clear_seconds' => max(1, (int) env('TRIP_SPEEDING_CLEAR_SECONDS', 10)),
+    'default_pause_limit_seconds' => max(0, (int) env('TRIP_DEFAULT_PAUSE_LIMIT_SECONDS', 300)),
+    'pause_repeat_minutes' => max(1, (int) env('TRIP_PAUSE_REPEAT_MINUTES', 10)),
+    'time_warning_percent' => min(100, max(1, (int) env('TRIP_TIME_WARNING_PERCENT', 80))),
+    'time_alert_repeat_minutes' => max(1, (int) env('TRIP_TIME_ALERT_REPEAT_MINUTES', 15)),
+    'heartbeat_interval_seconds' => max(5, (int) env('TRIP_HEARTBEAT_INTERVAL_SECONDS', 60)),
+    'heartbeat_stale_minutes' => max(1, (int) env('TRIP_HEARTBEAT_STALE_MINUTES', 5)),
+    'no_driver_alert_repeat_minutes' => max(1, (int) env('TRIP_NO_DRIVER_ALERT_REPEAT_MINUTES', 15)),
+    'qr_token_length' => min(64, max(32, (int) env('TRIP_QR_TOKEN_LENGTH', 40))),
+
     // Runtime tracking settings now live on each vehicle. These values are defaults for new vehicles.
     'defaults' => [
         'wialon_movement_type' => (int) env('TRIP_DEFAULT_MOVEMENT_TYPE', 1),
@@ -17,7 +34,7 @@ return [
         'speeding_mode' => (int) env('TRIP_DEFAULT_SPEEDING_MODE', 0),
     ],
 
-    // Used by the driver module later.
+    // Backward-compatible settings retained for existing trip UI consumers.
     'warning_percent' => (int) env('TRIP_WARNING_PERCENT', 80),
     'switch_mode' => env('TRIP_SWITCH_MODE', 'next_stop'),
     'offline_minutes' => (int) env('TRIP_OFFLINE_MINUTES', 5),

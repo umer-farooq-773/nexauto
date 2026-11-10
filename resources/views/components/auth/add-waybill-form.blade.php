@@ -76,6 +76,7 @@
                             @foreach ($vehicles as $vehicle)
                                 <option value="{{ $vehicle->id }}"
                                     data-has-gps="{{ !empty($vehicle->gps_unit_id) ? '1' : '0' }}"
+                                    data-min-trip-seconds="{{ $vehicle->min_trip_seconds ?? '' }}"
                                     {{ ($result?->vehicle_id ?? old('vehicle_id')) == $vehicle->id ? 'selected' : '' }}>
                                     {{ $vehicle->fleet_no }} ({{ $vehicle->truck_no }})
                                 </option>
@@ -114,6 +115,7 @@
                                 </div>
                             @endforeach
                         </div>
+                        <div id="driver-time-limit-feedback" class="small mt-2" aria-live="polite"></div>
                         <div id="assigned-driver-quick-add" class="d-flex flex-wrap gap-2 mt-2"></div>
                     </div>
                 </div>
@@ -1171,6 +1173,34 @@
             renderCheckpointsUI();
 
             // Ordered waybill driver plan repeater.
+            function updateDriverTimeLimit() {
+                var $durations = $('#waybill-driver-rows .driver-duration');
+                var limitValue = $('#vehicle_id option:selected').attr('data-min-trip-seconds');
+                var limitSeconds = Number(limitValue);
+                var totalMinutes = 0;
+                $durations.each(function() {
+                    var value = Number($(this).val());
+                    if (Number.isFinite(value) && value > 0) totalMinutes += value;
+                    this.setCustomValidity('');
+                });
+
+                var $feedback = $('#driver-time-limit-feedback');
+                if (limitValue === undefined || limitValue === '' || !Number.isFinite(limitSeconds) || limitSeconds < 0 || $('#vehicle_id').val() === '') {
+                    $feedback.text('').removeClass('text-danger text-muted');
+                    return;
+                }
+
+                var limitMinutes = limitSeconds / 60;
+                if (totalMinutes * 60 > limitSeconds) {
+                    var message = 'Total planned driver time (' + totalMinutes + ' min) exceeds this vehicle’s trip duration limit (' + (Math.round(limitMinutes * 10) / 10) + ' min).';
+                    $feedback.text(message).removeClass('text-muted').addClass('text-danger');
+                    var $lastDuration = $durations.filter(function() { return Number($(this).val()) > 0; }).last();
+                    if ($lastDuration.length) $lastDuration[0].setCustomValidity(message);
+                } else {
+                    $feedback.text('Planned time: ' + totalMinutes + ' / ' + (Math.round(limitMinutes * 10) / 10) + ' min').removeClass('text-danger').addClass('text-muted');
+                }
+            }
+
             function updateDriverRows() {
                 var $rows = $('#waybill-driver-rows .waybill-driver-row');
                 $rows.each(function(index) {
@@ -1186,6 +1216,7 @@
 
                 $('#driver_id').val($rows.first().find('.waybill-driver-select').val() || '');
                 refreshDriverOptions();
+                updateDriverTimeLimit();
             }
 
             function refreshDriverOptions() {
@@ -1232,6 +1263,7 @@
                 updateDriverRows();
             });
             $(document).off('click.waybillDriverPlan', '#btn-add-driver').on('click.waybillDriverPlan', '#btn-add-driver', function() { addDriverRow(); });
+            $(document).off('input.waybillDriverPlan', '.driver-duration').on('input.waybillDriverPlan', '.driver-duration', updateDriverTimeLimit);
             $(document).off('click.waybillDriverPlan', '.btn-remove-driver').on('click.waybillDriverPlan', '.btn-remove-driver', function() {
                 var $select = $(this).closest('.waybill-driver-row').find('.waybill-driver-select');
                 if ($select.hasClass('select2-hidden-accessible')) $select.select2('destroy');

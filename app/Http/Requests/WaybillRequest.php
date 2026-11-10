@@ -7,6 +7,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use App\Interfaces\WaybillInterface;
 use App\Models\DriverDetail;
+use App\Models\Vehicle;
 
 class WaybillRequest extends FormRequest
 {
@@ -170,6 +171,23 @@ class WaybillRequest extends FormRequest
             $drivers = $this->input('drivers', []);
             if (!is_array($drivers) || $drivers === []) {
                 return;
+            }
+
+            $vehicle = Vehicle::query()->find($this->input('vehicle_id'));
+            $tripLimitSeconds = $vehicle?->min_trip_seconds;
+            if ($tripLimitSeconds !== null) {
+                $plannedSeconds = collect($drivers)->sum(function ($row): int {
+                    return is_array($row) && isset($row['duration_minutes']) && $row['duration_minutes'] !== ''
+                        ? (int) $row['duration_minutes'] * 60
+                        : 0;
+                });
+
+                if ($plannedSeconds > (int) $tripLimitSeconds) {
+                    $validator->errors()->add(
+                        'drivers',
+                        sprintf('The total planned driver time (%s minutes) cannot exceed this vehicle\'s minimum trip duration (%s minutes).', ceil($plannedSeconds / 60), ceil((int) $tripLimitSeconds / 60)),
+                    );
+                }
             }
 
             $driverIds = array_values(array_filter(array_map(
