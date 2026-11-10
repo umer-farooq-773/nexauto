@@ -17,7 +17,6 @@ class DriverDetailDto
     public readonly ?string $emergency_contact_name;
     public readonly ?string $emergency_contact_phone_number;
     public readonly ?string $status;
-    public readonly ?string $vehicle_id;
     public $file;
     public $company_id_card;
     public $license_card;
@@ -26,12 +25,6 @@ class DriverDetailDto
 
     public function __construct($request)
     {
-        \Log::info('DTO Constructor - Request data', [
-            'request' => $request,
-            'vehicle_field' => $request['vehicle'] ?? 'NOT_FOUND',
-            'all_keys' => array_keys($request)
-        ]);
-        
         $this->first_name                     = $request['first_name'];
         $this->last_name                      = $request['last_name'];
         $this->address                        = $request['address'];
@@ -45,17 +38,11 @@ class DriverDetailDto
         $this->emergency_contact_name         = $request['emergency_contact_name'] ?? null;
         $this->emergency_contact_phone_number = $request['emergency_contact_phone_number'] ?? null;
         $this->status                         = $request['status'];
-        $this->vehicle_id                     = $request['vehicle'] ?? null;
         $this->file                           = $request['driver_profile'] ?? null;
         $this->company_id_card                = $request['company_id_card'] ?? null;
         $this->license_card                   = $request['license_card'] ?? null;
         $this->employer_number                = $request['employer_number'] ?? null;
         $this->bvn_number                     = $request['bvn_number'] ?? null;
-        
-        \Log::info('DTO Constructor - Assigned values', [
-            'vehicle_id' => $this->vehicle_id,
-            'first_name' => $this->first_name
-        ]);
     }
 
     public static function fromRequest($request)
@@ -79,7 +66,6 @@ class DriverDetailDto
             'emergency_contact_name'         => $this->emergency_contact_name,
             'emergency_contact_phone_number' => $this->emergency_contact_phone_number,
             'status'                         => $this->status,
-            'vehicle_id'                     => $this->vehicle_id,
             'image'                          => $this->file,
             'company_id_card'                => $this->company_id_card,
             'license_card'                   => $this->license_card,

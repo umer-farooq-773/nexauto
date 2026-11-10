@@ -28,16 +28,10 @@ class DriverDetailRepository extends BaseRepository implements DriverDetailInter
         try {
             $dataArray = $data->toArray();
             $image = $dataArray['image'];
-            $vehicleId = $dataArray['vehicle_id'];
             $companyIdCard = $dataArray['company_id_card'];
             $licenseCard = $dataArray['license_card'];
 
-            \Log::info('Driver store data', [
-                'vehicle_id' => $vehicleId,
-                'data_array' => $dataArray
-            ]);
-
-            unset($dataArray['image'], $dataArray['vehicle_id'], $dataArray['company_id_card'], $dataArray['license_card']);
+            unset($dataArray['image'], $dataArray['company_id_card'], $dataArray['license_card']);
 
             $dataResult = $this->add($this->_model, $dataArray);
 
@@ -71,31 +65,6 @@ class DriverDetailRepository extends BaseRepository implements DriverDetailInter
                 }
             }
 
-            if ($vehicleId) {
-                \Log::info('Attempting to sync vehicle in store', [
-                    'driver_id' => $dataResult->id,
-                    'vehicle_id' => $vehicleId
-                ]);
-                try {
-                    $syncResult = $dataResult->vehicles()->sync([$vehicleId]);
-                    \Log::info('Vehicle sync successful in store', [
-                        'driver_id' => $dataResult->id,
-                        'vehicle_id' => $vehicleId,
-                        'sync_result' => $syncResult
-                    ]);
-                } catch (\Throwable $th) {
-                    \Log::error('Driver vehicle sync error in store: ' . $th->getMessage(), [
-                        'driver_id' => $dataResult->id,
-                        'vehicle_id' => $vehicleId,
-                        'exception' => $th,
-                        'trace' => $th->getTraceAsString()
-                    ]);
-                    throw $th;
-                }
-            } else {
-                \Log::warning('No vehicle ID provided in store', ['driver_id' => $dataResult->id]);
-            }
-
             return true;
         } catch (\Throwable $th) {
             \Log::error('Driver store error: ' . $th->getMessage(), ['exception' => $th]);
@@ -116,11 +85,10 @@ class DriverDetailRepository extends BaseRepository implements DriverDetailInter
             }
 
             $dataArray = $data->toArray();
-            $vehicleId = $dataArray['vehicle_id'];
             $image = $dataArray['image'];
             $companyIdCard = $dataArray['company_id_card'];
             $licenseCard = $dataArray['license_card'];
-            unset($dataArray['vehicle_id'], $dataArray['image'], $dataArray['company_id_card'], $dataArray['license_card']);
+            unset($dataArray['image'], $dataArray['company_id_card'], $dataArray['license_card']);
 
             $result->update($dataArray);
 
@@ -148,31 +116,6 @@ class DriverDetailRepository extends BaseRepository implements DriverDetailInter
                         \Log::error("Driver {$type} upload error on update: " . $th->getMessage(), ['driver_id' => $result->id]);
                     }
                 }
-            }
-
-            if ($vehicleId) {
-                \Log::info('Attempting to sync vehicle', [
-                    'driver_id' => $result->id,
-                    'vehicle_id' => $vehicleId
-                ]);
-                try {
-                    $syncResult = $result->vehicles()->sync([$vehicleId]);
-                    \Log::info('Vehicle sync successful', [
-                        'driver_id' => $result->id,
-                        'vehicle_id' => $vehicleId,
-                        'sync_result' => $syncResult
-                    ]);
-                } catch (\Throwable $th) {
-                    \Log::error('Driver vehicle sync error on update: ' . $th->getMessage(), [
-                        'driver_id' => $result->id,
-                        'vehicle_id' => $vehicleId,
-                        'exception' => $th,
-                        'trace' => $th->getTraceAsString()
-                    ]);
-                    throw $th; // Now it will throw the error so we can see it
-                }
-            } else {
-                \Log::info('No vehicle ID provided for driver', ['driver_id' => $result->id]);
             }
 
             return $result;

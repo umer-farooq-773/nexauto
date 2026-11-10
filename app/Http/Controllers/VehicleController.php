@@ -40,8 +40,17 @@ class VehicleController extends BaseController
     {
         $data = $this->_repo->show($id);
         if (!$data) abort(404);
-        $data->load(['drivers', 'vehicle_make_model', 'vehicle_type', 'gps_device_type', 'creator']);
-        return view($this->_directory . '.show', compact('data'));
+        $data->load(['vehicle_make_model', 'vehicle_type', 'gps_device_type', 'creator']);
+        $activeWaybill = \App\Models\Waybill::query()
+            ->where('vehicle_id', $data->id)
+            ->whereHas('status', fn ($query) => $query->whereIn('value', \App\Models\Waybill::ACTIVE_STATUS_VALUES))
+            ->with(['driver', 'driverPlans.driver'])
+            ->latest('created_at')
+            ->first();
+        $activeDriverPlan = $activeWaybill?->driverPlans->firstWhere('status', 'active');
+        $currentDriver = $activeDriverPlan?->driver ?? $activeWaybill?->driver;
+
+        return view($this->_directory . '.show', compact('data', 'currentDriver'));
     }
 
     public function vehicle_home()
@@ -133,7 +142,6 @@ class VehicleController extends BaseController
     {
         $data = $this->_repo->show($id);
         if (!$data) abort(404);
-        $data->load('drivers');
         if (Schema::hasTable('wialon_vehicle_settings_sync_logs')) {
             $data->load('wialonSettingSyncLogs.user');
         }
@@ -207,20 +215,23 @@ class VehicleController extends BaseController
      */
     public function vehicleTracking(Vehicle $vehicle)
     {
-        $vehicle->load('drivers');
-        
         // Check if vehicle has GPS unit
         $matchedUnitId = $vehicle->gps_unit_id
             ? (string) $vehicle->gps_unit_id
             : null;
 
-        // Try to find an active waybill for this vehicle (in_transit status = 2)
+        // The active waybill is the source of the vehicle's current driver assignment.
         $activeWaybill = \App\Models\Waybill::where('vehicle_id', $vehicle->id)
             ->whereHas('status', function($q) {
-                $q->where('value', 2); // in_transit
+                $q->whereIn('value', \App\Models\Waybill::ACTIVE_STATUS_VALUES);
             })
-            ->with(['driver', 'status'])
+            ->with(['driver', 'driverPlans.driver', 'status'])
+            ->latest('created_at')
             ->first();
+        if ($activeWaybill) {
+            $activeDriverPlan = $activeWaybill->driverPlans->firstWhere('status', 'active');
+            $activeWaybill->setRelation('driver', $activeDriverPlan?->driver ?? $activeWaybill->driver);
+        }
 
         return view('auth.pages.vehicle.partials._map_tracking', [
             'wialonToken'   => config('services.wialon.token'),

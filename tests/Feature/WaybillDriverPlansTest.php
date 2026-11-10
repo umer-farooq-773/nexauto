@@ -12,13 +12,13 @@ use App\Models\VehicleType;
 use App\Models\Waybill;
 use App\Models\WaybillDriverPlan;
 use App\Services\WialonService;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class WaybillDriverPlansTest extends TestCase
 {
-    use DatabaseTransactions;
+    use RefreshDatabase;
 
     private Vehicle $vehicle;
     private Status $awaiting;
@@ -110,11 +110,58 @@ class WaybillDriverPlansTest extends TestCase
         $awaitingWaybill = $this->existingWaybill($driver, $this->awaiting);
         $number = 'PLAN-' . $this->suffix();
 
-        $this->post(route('waybill.store'), $this->payload([['driver_id' => $driver->id, 'duration_minutes' => '']], $number))
+        $this->post(route('waybill.store'), $this->payload(
+            [['driver_id' => $driver->id, 'duration_minutes' => '']],
+            $number,
+            $this->anotherVehicle()->id,
+        ))
             ->assertRedirect(route('waybill.index'))
             ->assertSessionHas('warning');
 
         $this->assertStringContainsString($awaitingWaybill->waybill_number, session('warning'));
+        $this->assertDatabaseHas('waybills', ['waybill_number' => $number]);
+    }
+
+    public function test_it_rejects_a_vehicle_already_allocated_to_an_active_waybill(): void
+    {
+        $this->existingWaybill($this->newDriver(), $this->allocated);
+        $number = 'PLAN-' . $this->suffix();
+
+        $this->post(route('waybill.store'), $this->payload([
+            ['driver_id' => $this->newDriver()->id, 'duration_minutes' => ''],
+        ], $number))
+            ->assertSessionHasErrors('vehicle_id');
+
+        $this->assertDatabaseMissing('waybills', ['waybill_number' => $number]);
+    }
+
+    public function test_it_releases_a_vehicle_when_a_waybill_is_delivered(): void
+    {
+        $previousWaybill = $this->existingWaybill($this->newDriver(), $this->allocated);
+        $this->put(route('waybill.update_status', $previousWaybill->id), ['status' => 'delivered'])
+            ->assertSessionHas('success');
+        $this->assertSame(3, (int) $previousWaybill->fresh()->status->value);
+        $number = 'PLAN-' . $this->suffix();
+
+        $this->post(route('waybill.store'), $this->payload([
+            ['driver_id' => $this->newDriver()->id, 'duration_minutes' => ''],
+        ], $number))
+            ->assertRedirect(route('waybill.index'));
+
+        $this->assertDatabaseHas('waybills', ['waybill_number' => $number]);
+    }
+
+    public function test_it_releases_a_vehicle_when_a_waybill_is_completed(): void
+    {
+        $previousWaybill = $this->existingWaybill($this->newDriver(), $this->allocated);
+        $previousWaybill->update(['status_id' => $this->makeStatus(4, 'Completed')->id]);
+        $number = 'PLAN-' . $this->suffix();
+
+        $this->post(route('waybill.store'), $this->payload([
+            ['driver_id' => $this->newDriver()->id, 'duration_minutes' => ''],
+        ], $number))
+            ->assertRedirect(route('waybill.index'));
+
         $this->assertDatabaseHas('waybills', ['waybill_number' => $number]);
     }
 
@@ -184,11 +231,11 @@ class WaybillDriverPlansTest extends TestCase
         $this->assertSame(987654321, $result['wialon_route_id']);
     }
 
-    private function payload(array $drivers, ?string $number = null): array
+    private function payload(array $drivers, ?string $number = null, ?string $vehicleId = null): array
     {
         return [
             'waybill_number' => $number ?? 'PLAN-' . $this->suffix(),
-            'vehicle_id' => $this->vehicle->id,
+            'vehicle_id' => $vehicleId ?? $this->vehicle->id,
             'driver_id' => $drivers[0]['driver_id'] ?? $this->newDriver()->id,
             'drivers' => $drivers,
             'status_id' => $this->allocated->id,
@@ -203,6 +250,15 @@ class WaybillDriverPlansTest extends TestCase
             'first_name' => 'Driver', 'last_name' => $token, 'address' => 'Test address',
             'phone_number' => '1234567890', 'national_id_passport_number' => 'NID-' . $token,
             'drivers_license_number' => 'DL-' . $token,
+        ]);
+    }
+
+    private function anotherVehicle(): Vehicle
+    {
+        return Vehicle::factory()->create([
+            'vehicle_make_model_id' => $this->vehicle->vehicle_make_model_id,
+            'vehicle_type_id' => $this->vehicle->vehicle_type_id,
+            'gps_unit_id' => null,
         ]);
     }
 

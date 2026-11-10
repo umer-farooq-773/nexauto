@@ -159,7 +159,7 @@
                         <div class="col-md-6">
                             <div class="info-group">
                                 <label class="info-label"><i class="ri-user-line"></i> {{ __('Driver') }}</label>
-                                <div class="info-value">{{ $data->driver?->full_name ?? '-' }}</div>
+                                <div class="info-value">{{ $currentDriver?->full_name ?? '-' }}</div>
                             </div>
                         </div>
 
@@ -452,4 +452,3 @@
         }
     </style>
 </x-layouts.auth>
-

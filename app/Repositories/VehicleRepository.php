@@ -35,7 +35,6 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
     {
         return DB::transaction(function () use ($data) {
             $dataArray = $data->toArray();
-            $drivers   = $data->drivers ?? [];
 
             // Set created_by to authenticated user ID
             $dataArray['created_by'] = auth()->id();
@@ -162,19 +161,7 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
                 'gps_provider' => $gpsProvider,
             ]);
 
-            // STEP 2: Sync drivers
-            if (!empty($drivers) && $vehicle) {
-                try {
-                    $vehicle->drivers()->sync($drivers);
-                } catch (\Throwable $th) {
-                    Log::error('Error syncing drivers', [
-                        'vehicle_id' => $vehicle->id,
-                        'error' => $th->getMessage(),
-                    ]);
-                }
-            }
-
-            // STEP 3: Attempt Wialon synchronization (if needed)
+            // STEP 2: Attempt Wialon synchronization (if needed)
             if ($shouldSyncWialon) {
                 Log::info('Starting Wialon synchronization', [
                     'vehicle_id' => $vehicle->id,
@@ -280,7 +267,6 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
         $result = $this->checkRecord($id);
 
         $dataArray = $data->toArray();
-        $drivers   = $data->drivers ?? [];
 
         // Never let a plain field edit re-trigger unit creation — Wialon
         // sync fields are backend-controlled here too.
@@ -518,18 +504,6 @@ class VehicleRepository extends BaseRepository implements VehicleInterface
 
         if ($settingsPushed) {
             $this->recordSettingsSync($result, 'push', 'success', $settingsPushedPayload);
-        }
-
-        if (!empty($drivers)) {
-            try {
-                $result->drivers()->sync($drivers);
-            } catch (\Throwable $th) {
-                Log::error('Error syncing drivers for vehicle update: ' . $th->getMessage(), [
-                    'vehicle_id' => $result->id,
-                    'drivers' => $drivers,
-                    'exception' => $th,
-                ]);
-            }
         }
 
         return $result;

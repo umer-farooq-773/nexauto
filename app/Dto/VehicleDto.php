@@ -39,8 +39,6 @@ class VehicleDto
 
     public readonly string $status;
 
-    public $drivers;
-
     private const WIALON_SETTING_FIELDS = [
         'wialon_movement_type', 'wialon_gps_correction', 'wialon_min_satellites',
         'min_moving_speed_kmh', 'min_parking_seconds', 'max_messages_distance_m',
@@ -202,8 +200,6 @@ class VehicleDto
         $this->base_site = $request['base_site'];
 
         $this->status = $request['status'];
-
-        $this->drivers = $request['drivers'] ?? [];
 
         $defaults = config('trips.defaults', []);
         foreach (self::WIALON_SETTING_FIELDS as $field) {

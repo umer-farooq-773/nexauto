@@ -56,9 +56,6 @@
         <x-auth.input-field type="date" name="license_expiry_date" id="license_expiry_date" required="false" place="" val="{{$result?->license_expiry_date}}" extraclasses="" label="{{ __('License Expiry Date') }}" />
     </div>
 
-    <div class="col-md-6" style="display: none;">
-        <x-auth.vehicle-list :existing-id="$result?->vehicles?->first()?->id" />
-    </div>
     <div class="form-floating mb-3 col-md-6">
         <select name="status" id="status" class="form-select  shadow-sm">
             <option value="" selected disabled>Select Status</option>

@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Interfaces\WaybillInterface;
 use App\Dto\WaybillDto;
 use App\Models\Waybill;
+use App\Models\Vehicle;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -98,6 +99,11 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
     {
         return DB::transaction(function () use ($data) {
             $dataArray = $data->toArray();
+            $this->lockVehicleForWaybill(
+                (string) $dataArray['vehicle_id'],
+                null,
+                $this->isActiveVehicleWaybillStatus($dataArray['status_id'] ?? null),
+            );
             $cargos = $dataArray['cargos'] ?? null;
             $drivers = $dataArray['drivers'];
             unset($dataArray['cargos'], $dataArray['drivers']);
@@ -115,12 +121,18 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
     public function update($id, WaybillDto $data)
     {
         return DB::transaction(function () use ($id, $data) {
+            $dataArray = $data->toArray();
+            $this->lockVehicleForWaybill(
+                (string) $dataArray['vehicle_id'],
+                (string) $id,
+                $this->isActiveVehicleWaybillStatus($dataArray['status_id'] ?? null),
+            );
+
             $result = $this->_model->newQuery()->with('driverPlans')->lockForUpdate()->find($id);
             if (!$result) {
                 return false;
             }
 
-            $dataArray = $data->toArray();
             $cargos = $dataArray['cargos'] ?? null;
             $drivers = $dataArray['drivers'];
             unset($dataArray['cargos'], $dataArray['drivers']);
@@ -134,6 +146,48 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
         });
     }
 
+    public function lockVehicleForWaybill(string $vehicleId, ?string $ignoreWaybillId = null, bool $requireAvailability = true): void
+    {
+        $vehicle = Vehicle::query()->lockForUpdate()->find($vehicleId);
+        if (!$vehicle) {
+            throw ValidationException::withMessages([
+                'vehicle_id' => 'The selected vehicle is no longer available.',
+            ]);
+        }
+
+        if (!$requireAvailability) {
+            return;
+        }
+
+        $activeWaybill = Waybill::query()
+            ->where('vehicle_id', $vehicleId)
+            ->whereHas('status', fn ($query) => $query->whereIn('value', Waybill::ACTIVE_STATUS_VALUES))
+            ->when($ignoreWaybillId, fn ($query) => $query->whereKeyNot($ignoreWaybillId))
+            ->lockForUpdate()
+            ->first(['id', 'waybill_number']);
+
+        if ($activeWaybill) {
+            throw ValidationException::withMessages([
+                'vehicle_id' => sprintf(
+                    'This vehicle is already assigned to active waybill %s. It becomes available when that waybill is delivered or completed.',
+                    $activeWaybill->waybill_number,
+                ),
+            ]);
+        }
+    }
+
+    private function isActiveVehicleWaybillStatus(?string $statusId): bool
+    {
+        if ($statusId === null) {
+            return false;
+        }
+
+        $statusValue = \App\Models\Status::query()->whereKey($statusId)->value('value');
+
+        return $statusValue !== null
+            && in_array((int) $statusValue, Waybill::ACTIVE_STATUS_VALUES, true);
+    }
+
     public function driversBusy(array $driverIds, ?string $ignoreWaybillId = null): array
     {
         $driverIds = array_values(array_unique(array_filter($driverIds)));
@@ -143,7 +197,7 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
 
         $waybills = Waybill::query()
             ->with(['status:id,value,badge_label', 'driver:id,first_name,last_name', 'driverPlans.driver:id,first_name,last_name'])
-            ->whereHas('status', fn ($query) => $query->whereIn('value', [0, 1, 2, 5]))
+            ->whereHas('status', fn ($query) => $query->whereIn('value', Waybill::ACTIVE_STATUS_VALUES))
             ->when($ignoreWaybillId, fn ($query) => $query->whereKeyNot($ignoreWaybillId))
             ->get();
 
@@ -284,4 +338,3 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
         }
     }
 }
-

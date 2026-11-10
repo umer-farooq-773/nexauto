@@ -21,8 +21,8 @@
         $destination = $waybill->destination;
         $waybillNumber = $waybill->waybill_number;
     } else {
-        // No waybill - just show vehicle tracking
-        $driverName = $vehicle->drivers->first() ? trim($vehicle->drivers->first()->first_name . ' ' . $vehicle->drivers->first()->last_name) : '—';
+        // No active waybill means there is no current driver assignment.
+        $driverName = '—';
         $statusName = 'No Active Trip';
         $originLat = null;
         $originLng = null;
@@ -39,7 +39,7 @@
     'waybill' => $waybill ?? (object)[
         'id' => 'vehicle-' . $vehicle->id,
         'vehicle' => $vehicle,
-        'driver' => $vehicle->drivers->first(),
+        'driver' => null,
         'status' => (object)['name' => $statusName],
         'waybill_number' => $waybillNumber,
         'origin' => $origin,

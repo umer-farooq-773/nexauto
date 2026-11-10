@@ -96,9 +96,6 @@ class VehicleRequest extends FormRequest
             'base_site' => ['required','string','max:150'],
 
             'status' => ['required','in:0,1,2'],
-
-            'drivers' => ['nullable','array'],
-            'drivers.*' => ['uuid', 'exists:driver_details,id']
         ];
     }
 

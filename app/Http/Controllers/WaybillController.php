@@ -609,8 +609,8 @@ class WaybillController extends BaseController
     {
         try {
             $waybill = $this->_repo->store(WaybillDto::fromRequest($request->validated()));
-            $waybill->loadMissing(['vehicle.drivers', 'driver.user', 'driverPlans.driver']);
-            $warnings = $this->waybillDriverWarnings($waybill, (array) $request->attributes->get('waybill_driver_warnings', []));
+            $waybill->loadMissing('vehicle');
+            $warnings = (array) $request->attributes->get('waybill_driver_warnings', []);
 
             if ($request->hasFile('document')) {
                 $uploaded = $waybill->uploadFile($request->file('document'), 'waybills/documents/');
@@ -669,8 +669,8 @@ class WaybillController extends BaseController
         try {
             $this->_repo->update($id, WaybillDto::fromRequest($request->validated()));
             $waybill = $this->_repo->show($id);
-            $waybill->loadMissing(['vehicle.drivers', 'driverPlans.driver']);
-            $warnings = $this->waybillDriverWarnings($waybill, (array) $request->attributes->get('waybill_driver_warnings', []));
+            $waybill->loadMissing('vehicle');
+            $warnings = (array) $request->attributes->get('waybill_driver_warnings', []);
 
             if ($request->hasFile('document')) {
                 $uploaded = $waybill->uploadFile($request->file('document'), 'waybills/documents/');
@@ -794,18 +794,6 @@ class WaybillController extends BaseController
         return $result;
     }
 
-    private function waybillDriverWarnings(Waybill $waybill, array $warnings): array
-    {
-        $assignedDriverIds = $waybill->vehicle?->drivers?->pluck('id')->map(fn ($id) => (string) $id)->all() ?? [];
-        foreach ($waybill->driverPlans as $plan) {
-            if ($plan->driver && !in_array((string) $plan->driver_id, $assignedDriverIds, true)) {
-                $warnings[] = $plan->driver->full_name . ' is not assigned to the selected vehicle.';
-            }
-        }
-
-        return array_values(array_unique($warnings));
-    }
-
     public function edit($id)
     {
         $data = $this->_repo->show($id);
@@ -828,17 +816,10 @@ class WaybillController extends BaseController
             return response()->json([]);
         }
 
-        $assigned = $vehicle->drivers()->get();
-        $hasAssignedDrivers = $assigned->isNotEmpty();
-
-        if (!$hasAssignedDrivers) {
-            $assigned = app()->make('App\Interfaces\DriverDetailInterface')->all();
-        }
-
-        $drivers = $assigned->map(fn($d) => [
+        $drivers = app()->make('App\Interfaces\DriverDetailInterface')->all()->map(fn($d) => [
             'id' => $d->id,
             'name' => $d->full_name,
-            'assigned' => $hasAssignedDrivers,
+            'assigned' => false,
         ]);
         return response()->json($drivers);
     }
@@ -968,8 +949,18 @@ class WaybillController extends BaseController
 
         $oldStatusLabel = $waybill->status?->badge_label ?? 'Unknown';
 
-        $waybill->status_id = $status->id;
-        $waybill->save();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($waybill, $status, $statusValue): void {
+            $this->_repo->lockVehicleForWaybill(
+                (string) $waybill->vehicle_id,
+                (string) $waybill->id,
+                in_array($statusValue, Waybill::ACTIVE_STATUS_VALUES, true),
+            );
+
+            $lockedWaybill = Waybill::query()->lockForUpdate()->findOrFail($waybill->id);
+            $lockedWaybill->status_id = $status->id;
+            $lockedWaybill->save();
+        });
+        $waybill->refresh();
 
         if ($request->hasFile('delivery_document')) {
             $uploaded = $waybill->uploadFile($request->file('delivery_document'), 'waybills/pod/');

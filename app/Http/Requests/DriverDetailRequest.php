@@ -35,7 +35,6 @@ class DriverDetailRequest extends FormRequest
             'license_expiry_date'           => ['nullable', 'date'],
             'emergency_contact_name'        => ['nullable', 'string', 'max:255'],
             'emergency_contact_phone_number'=> ['nullable', 'string', 'max:20'],
-            'vehicle'                       => ['nullable', 'uuid', 'exists:vehicles,id'],
             'status'                        => ['required'],
             'employer_number'               => ['required'],
             'bvn_number'                    => ['required'],

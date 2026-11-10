@@ -12,6 +12,8 @@ class Waybill extends Model
     use HasFactory, HasUuids;
     use FileRelationship;
 
+    public const ACTIVE_STATUS_VALUES = [0, 1, 2, 5];
+
     protected $fillable = [
         'waybill_number',
         'vehicle_id',
