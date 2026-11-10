@@ -7,6 +7,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Check if columns already exist
         $columns = $this->getTableColumns('payment_histories');
 

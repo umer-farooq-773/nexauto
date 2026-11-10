@@ -28,7 +28,22 @@
             iconbg="bg-danger" icontext="text-white" />
     </x-slot:quickLinks>
 
-
+    @if(session('driver_credentials'))
+        <div class="alert alert-success alert-dismissible fade show mt-3 shadow-sm border-0 rounded-3" role="alert">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="fa-solid fa-circle-check fs-5"></i>
+                <h6 class="mb-0 fw-bold">{{ __('Driver Portal Credentials Generated!') }}</h6>
+            </div>
+            <p class="mb-1 text-muted">
+                {{ __('A welcome notification was dispatched to the driver. You can also share these credentials directly:') }}
+            </p>
+            <div class="p-2 bg-light rounded-2 font-monospace small">
+                <div><strong>Email:</strong> {{ session('driver_credentials.email') }}</div>
+                <div><strong>Password:</strong> <span class="badge bg-dark">{{ session('driver_credentials.password') }}</span></div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
 
     <div class="bg-white mt-3">
         <x-all-list title="{{__('Driver Log Table')}}" :data="$data['all']">
@@ -36,6 +51,7 @@
                 <thead >
                     <tr class="text-dark">
                         <th scope="col">Full Name</th>
+                        <th scope="col">Email</th>
                         <th scope="col">Driver's License Number</th>
                         <th scope="col">License Category/Class</th>
                         <th scope="col">License Expiry Date</th>
@@ -49,7 +65,19 @@
                 <tbody>
                     @foreach ($data['all'] as $key => $driver)
                     <tr>
-                        <td>{{ $driver?->full_name }}</td>
+                        <td>
+                            <div class="fw-semibold text-dark">{{ $driver?->full_name }}</div>
+                            @if($driver?->user_id)
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">Portal Active</span>
+                            @endif
+                        </td>
+                        <td>
+                            @if($driver?->email)
+                                <span class="text-primary">{{ $driver->email }}</span>
+                            @else
+                                <span class="text-muted">—</span>
+                            @endif
+                        </td>
                         <td>{{ $driver?->drivers_license_number }}</td>
                         <td>{{ $driver?->license_category_class }}</td>
                         <td>{{ $driver?->license_expiry_date }}</td>
@@ -74,7 +102,19 @@
                             <div class="dropdown">
                                 <button class="btn btn-sm border dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fa-solid fa-ellipsis-vertical"></i> </button>
-                                <ul class="dropdown-menu">
+                                <ul class="dropdown-menu dropdown-menu-end shadow">
+                                    <li>
+                                        <a class="dropdown-item text-primary" href="{{ route('driver.portal', ['driver_id' => $driver->id]) }}" target="_blank">
+                                            <i class="fa-solid fa-tablet-screen-button me-2"></i> {{ __('Open Driver ELD Screen') }}
+                                        </a>
+                                    </li>
+                                    @if($driver?->email)
+                                    <li>
+                                        <a class="dropdown-item text-secondary" href="{{ route('driver.resend_credentials', $driver->id) }}" onclick="return confirm('Reset and send new login password to {{ $driver->email }}?');">
+                                            <i class="fa-solid fa-key me-2"></i> {{ __('Resend Credentials') }}
+                                        </a>
+                                    </li>
+                                    @endif
                                     @can('view_driver')
                                 <li>
                                     <a class="dropdown-item" href="{{ route('driver.show', $driver?->id) }}">

@@ -33,6 +33,7 @@ class DriverDetail extends Model
         'status',
         'bvn_number',
         'employer_number',
+        'email',
     ];
 
     public function getFullNameAttribute()
@@ -105,5 +106,15 @@ class DriverDetail extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function eldLogs()
+    {
+        return $this->hasMany(DriverEldLog::class, 'driver_id')->latest();
+    }
+
+    public function driverPlans()
+    {
+        return $this->hasMany(WaybillDriverPlan::class, 'driver_id');
     }
 }

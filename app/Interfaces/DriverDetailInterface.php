@@ -10,4 +10,5 @@ interface DriverDetailInterface
     public function destroy($id);
     public function store(\App\Dto\DriverDetailDto $data);
     public function update($id, \App\Dto\DriverDetailDto $data);
+    public function resendCredentials($id);
 }

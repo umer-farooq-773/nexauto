@@ -1,0 +1,708 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Constants\Constants;
+use App\Models\DriverDetail;
+use App\Models\DriverEldLog;
+use App\Models\Status;
+use App\Models\User;
+use App\Models\Vehicle;
+use App\Models\Waybill;
+use App\Models\WaybillDriverPlan;
+use App\Notifications\DriverOvertimeNotification;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class DriverPortalController extends Controller
+{
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
+    /**
+     * Single-screen PWA Driver ELD & Navigation Portal
+     */
+    public function index(Request $request)
+    {
+        $user = auth()->user();
+        $driver = null;
+
+        if ($user->driverDetail) {
+            $driver = $user->driverDetail;
+        } elseif ($request->filled('driver_id') && $user->hasAnyRole([Constants::SUPERADMIN, Constants::ADMIN, Constants::CHAMPS_MANAGEMENT, Constants::CLIENT_DIRECTORS])) {
+            $driver = DriverDetail::find($request->input('driver_id'));
+        }
+
+        if (!$driver) {
+            // If admin or preview without driver profile, pick the first active driver
+            if ($user->hasAnyRole([Constants::SUPERADMIN, Constants::ADMIN, Constants::CHAMPS_MANAGEMENT])) {
+                $driver = DriverDetail::where('status', 1)->first() ?? DriverDetail::first();
+            }
+        }
+
+        if (!$driver) {
+            return view('driver.no-profile');
+        }
+
+        // Find active waybill assigned to this driver
+        $waybill = Waybill::with(['vehicle', 'driverPlans.driver', 'status', 'route_trip'])
+            ->whereHas('status', function ($q) {
+                $q->whereIn('value', Waybill::ACTIVE_STATUS_VALUES);
+            })
+            ->where(function ($q) use ($driver) {
+                $q->where('driver_id', $driver->id)
+                  ->orWhereHas('driverPlans', function ($planQ) use ($driver) {
+                      $planQ->where('driver_id', $driver->id);
+                  });
+            })
+            ->orderByRaw("CASE WHEN status_id IN (SELECT id FROM statuses WHERE value = 2) THEN 0 ELSE 1 END")
+            ->latest('updated_at')
+            ->first();
+
+        // If no active waybill found, check for latest completed or awaiting waybill
+        if (!$waybill) {
+            $waybill = Waybill::with(['vehicle', 'driverPlans.driver', 'status', 'route_trip'])
+                ->where(function ($q) use ($driver) {
+                    $q->where('driver_id', $driver->id)
+                      ->orWhereHas('driverPlans', function ($planQ) use ($driver) {
+                          $planQ->where('driver_id', $driver->id);
+                      });
+                })
+                ->latest('updated_at')
+                ->first();
+        }
+
+        // Multi-driver plan resolution
+        $currentPlan = null;
+        $plannedSeconds = 14400; // 4 hours default
+        $actualDrivenSeconds = 0;
+        $planStatus = 'pending';
+        $driverSequence = 1;
+        $totalDrivers = 1;
+        $allDriverPlans = collect();
+
+        if ($waybill) {
+            $allDriverPlans = $waybill->driverPlans()->with('driver')->orderBy('sequence')->get();
+            $totalDrivers = $allDriverPlans->count() ?: 1;
+            $currentPlan = $allDriverPlans->firstWhere('driver_id', $driver->id);
+
+            if ($currentPlan) {
+                $driverSequence = $currentPlan->sequence;
+                $planStatus = $currentPlan->status;
+                $actualDrivenSeconds = (int) $currentPlan->actual_driven_seconds;
+
+                if ($currentPlan->planned_seconds !== null && $currentPlan->planned_seconds > 0) {
+                    $plannedSeconds = (int) $currentPlan->planned_seconds;
+                } elseif ($waybill->estimated_duration) {
+                    $parsed = $this->parseDurationToSeconds($waybill->estimated_duration);
+                    if ($parsed > 0) {
+                        // If multi-driver, distribute or allocate based on sequence (4h for 1st, 2h for 2nd)
+                        if ($totalDrivers > 1) {
+                            $plannedSeconds = $driverSequence === 1 ? min($parsed, 14400) : 7200;
+                        } else {
+                            $plannedSeconds = $parsed;
+                        }
+                    } else {
+                        $plannedSeconds = $driverSequence === 1 ? 14400 : 7200;
+                    }
+                } else {
+                    $plannedSeconds = $driverSequence === 1 ? 14400 : 7200;
+                }
+            } elseif ($waybill->estimated_duration) {
+                $parsed = $this->parseDurationToSeconds($waybill->estimated_duration);
+                $plannedSeconds = $parsed > 0 ? $parsed : 14400;
+            }
+        }
+
+        if ($plannedSeconds <= 0) {
+            $plannedSeconds = 14400; // Fallback to 4 hours default shift
+        }
+
+        $fullName = trim($driver->full_name ?? '');
+        $nameParts = preg_split('/\s+/', $fullName);
+        if (count($nameParts) >= 2 && !empty($nameParts[1])) {
+            $initials = strtoupper(substr($nameParts[0], 0, 1) . substr($nameParts[1], 0, 1));
+        } else {
+            $cleanName = preg_replace('/[^a-zA-Z0-9]/', '', $fullName);
+            $initials = strtoupper(substr($cleanName ?: 'DR', 0, 2));
+        }
+
+        $vehicle = $waybill?->vehicle ?? $driver->vehicles->first();
+
+        // Calculate initial remaining seconds
+        $remainingSeconds = max(0, $plannedSeconds - $actualDrivenSeconds);
+        $isOvertime = $actualDrivenSeconds > $plannedSeconds;
+        $overtimeSeconds = $isOvertime ? ($actualDrivenSeconds - $plannedSeconds) : 0;
+
+        // Fetch recent ELD logs for this driver
+        $eldLogs = DriverEldLog::where('driver_id', $driver->id)
+            ->when($waybill, fn ($q) => $q->where('waybill_id', $waybill->id))
+            ->latest()
+            ->take(30)
+            ->get();
+
+        $wialonHost = rtrim(config('services.wialon.host', 'https://hst-api.wialon.eu'), '/');
+        $wialonToken = config('services.wialon.token', '');
+
+        // Pre-parse checkpoints and route geometry
+        $checkpoints = is_array($waybill?->checkpoints) ? $waybill->checkpoints : (json_decode($waybill?->checkpoints ?? '[]', true) ?: []);
+        $routeGeometry = is_array($waybill?->route_geometry) ? $waybill->route_geometry : (json_decode($waybill?->route_geometry ?? '[]', true) ?: []);
+
+        return view('driver.portal', compact(
+            'driver',
+            'waybill',
+            'vehicle',
+            'currentPlan',
+            'plannedSeconds',
+            'actualDrivenSeconds',
+            'remainingSeconds',
+            'planStatus',
+            'driverSequence',
+            'totalDrivers',
+            'allDriverPlans',
+            'initials',
+            'isOvertime',
+            'overtimeSeconds',
+            'eldLogs',
+            'wialonHost',
+            'wialonToken',
+            'checkpoints',
+            'routeGeometry'
+        ));
+    }
+
+    /**
+     * Start duty and countdown timer
+     */
+    public function startDuty(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'  => ['required'],
+            'waybill_id' => ['nullable'],
+            'latitude'   => ['nullable', 'numeric'],
+            'longitude'  => ['nullable', 'numeric'],
+            'speed_kmh'  => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+        $vehicleId = null;
+
+        if ($waybillId) {
+            $waybill = Waybill::find($waybillId);
+            $vehicleId = $waybill?->vehicle_id;
+
+            // Update waybill driver plan to active
+            $plan = WaybillDriverPlan::where('waybill_id', $waybillId)
+                ->where('driver_id', $driver->id)
+                ->first();
+
+            if ($plan) {
+                $plan->update([
+                    'status'     => 'active',
+                    'started_at' => $plan->started_at ?? now(),
+                ]);
+            }
+
+            // If waybill status is pending/awaiting (0 or 1), mark as In Transit (2)
+            if ($waybill && in_array((int)$waybill->status?->value, [0, 1])) {
+                $inTransitStatus = Status::where('value', 2)->first();
+                if ($inTransitStatus) {
+                    $waybill->update(['status_id' => $inTransitStatus->id]);
+                }
+            }
+        }
+
+        // Log ELD start duty event
+        $log = DriverEldLog::create([
+            'driver_id'        => $driver->id,
+            'waybill_id'       => $waybillId,
+            'vehicle_id'       => $vehicleId,
+            'event_type'       => 'start_duty',
+            'status'           => 'driving',
+            'latitude'         => $request->input('latitude'),
+            'longitude'        => $request->input('longitude'),
+            'speed_kmh'        => $request->input('speed_kmh', 0),
+            'elapsed_seconds'  => 0,
+            'notes'            => 'Driver started shift countdown timer via ELD Portal.',
+        ]);
+
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Duty timer started successfully.',
+            'started_at' => now()->toIso8601String(),
+            'status'     => 'active',
+            'log'        => [
+                'event_label' => $log->event_label,
+                'created_at'  => $log->created_at->format('H:i:s'),
+                'badge'       => $log->event_badge_class,
+            ]
+        ]);
+    }
+
+    /**
+     * Pause duty / Take a rest break
+     */
+    public function pauseDuty(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'        => ['required'],
+            'waybill_id'       => ['nullable'],
+            'elapsed_seconds'  => ['nullable', 'integer'],
+            'latitude'         => ['nullable', 'numeric'],
+            'longitude'        => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+        $elapsed = (int) $request->input('elapsed_seconds', 0);
+
+        if ($waybillId) {
+            $plan = WaybillDriverPlan::where('waybill_id', $waybillId)
+                ->where('driver_id', $driver->id)
+                ->first();
+
+            if ($plan && $elapsed > 0) {
+                $plan->update(['actual_driven_seconds' => $elapsed]);
+            }
+        }
+
+        $log = DriverEldLog::create([
+            'driver_id'        => $driver->id,
+            'waybill_id'       => $waybillId,
+            'event_type'       => 'pause_duty',
+            'status'           => 'on_duty',
+            'latitude'         => $request->input('latitude'),
+            'longitude'        => $request->input('longitude'),
+            'elapsed_seconds'  => $elapsed,
+            'notes'            => 'Driver paused timer for rest break.',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Duty paused.',
+            'status'  => 'paused',
+        ]);
+    }
+
+    /**
+     * Resume driving duty
+     */
+    public function resumeDuty(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'   => ['required'],
+            'waybill_id'  => ['nullable'],
+            'latitude'    => ['nullable', 'numeric'],
+            'longitude'   => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+
+        if ($waybillId) {
+            $plan = WaybillDriverPlan::where('waybill_id', $waybillId)
+                ->where('driver_id', $driver->id)
+                ->first();
+
+            if ($plan) {
+                $plan->update(['status' => 'active']);
+            }
+        }
+
+        $log = DriverEldLog::create([
+            'driver_id'   => $driver->id,
+            'waybill_id'  => $waybillId,
+            'event_type'  => 'resume_duty',
+            'status'      => 'driving',
+            'latitude'    => $request->input('latitude'),
+            'longitude'   => $request->input('longitude'),
+            'notes'       => 'Driver resumed duty timer.',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Duty resumed.',
+            'status'  => 'active',
+        ]);
+    }
+
+    /**
+     * End duty / Hand over to relief driver
+     */
+    public function endDuty(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'        => ['required'],
+            'waybill_id'       => ['nullable'],
+            'elapsed_seconds'  => ['nullable', 'integer'],
+            'latitude'         => ['nullable', 'numeric'],
+            'longitude'        => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+        $elapsed = (int) $request->input('elapsed_seconds', 0);
+        $nextDriver = null;
+
+        if ($waybillId) {
+            $plan = WaybillDriverPlan::where('waybill_id', $waybillId)
+                ->where('driver_id', $driver->id)
+                ->first();
+
+            if ($plan) {
+                $plan->update([
+                    'status'                => 'completed',
+                    'actual_driven_seconds' => $elapsed > 0 ? $elapsed : $plan->actual_driven_seconds,
+                    'ended_at'              => now(),
+                ]);
+
+                // Find next driver in plan sequence
+                $nextPlan = WaybillDriverPlan::with('driver')
+                    ->where('waybill_id', $waybillId)
+                    ->where('sequence', '>', $plan->sequence)
+                    ->orderBy('sequence')
+                    ->first();
+
+                if ($nextPlan) {
+                    $nextDriver = [
+                        'name'             => $nextPlan->driver?->full_name,
+                        'sequence'         => $nextPlan->sequence,
+                        'planned_hours'    => $nextPlan->planned_seconds ? round($nextPlan->planned_seconds / 3600, 1) : null,
+                    ];
+                }
+            }
+        }
+
+        $log = DriverEldLog::create([
+            'driver_id'        => $driver->id,
+            'waybill_id'       => $waybillId,
+            'event_type'       => 'end_duty',
+            'status'           => 'off_duty',
+            'latitude'         => $request->input('latitude'),
+            'longitude'        => $request->input('longitude'),
+            'elapsed_seconds'  => $elapsed,
+            'notes'            => 'Driver ended duty shift.',
+        ]);
+
+        return response()->json([
+            'success'     => true,
+            'message'     => 'Duty completed successfully.',
+            'status'      => 'completed',
+            'next_driver' => $nextDriver,
+        ]);
+    }
+
+    /**
+     * Periodic Timer Sync & Overtime Limit Exceeded Evaluation
+     */
+    public function syncTimer(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'        => ['required'],
+            'waybill_id'       => ['nullable'],
+            'elapsed_seconds'  => ['required', 'integer'],
+            'planned_seconds'  => ['required', 'integer'],
+            'latitude'         => ['nullable', 'numeric'],
+            'longitude'        => ['nullable', 'numeric'],
+            'speed_kmh'        => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+        $elapsed = (int) $request->input('elapsed_seconds');
+        $planned = (int) $request->input('planned_seconds');
+
+        // Persist actual driven seconds on the waybill driver plan
+        if ($waybillId) {
+            WaybillDriverPlan::where('waybill_id', $waybillId)
+                ->where('driver_id', $driver->id)
+                ->update(['actual_driven_seconds' => $elapsed]);
+        }
+
+        $isOvertime = $planned > 0 && $elapsed > $planned;
+        $overtimeNotificationSent = false;
+
+        if ($isOvertime) {
+            // Check if violation has already been notified recently (past 30 mins)
+            $recentViolation = DriverEldLog::where('driver_id', $driver->id)
+                ->where('waybill_id', $waybillId)
+                ->where('event_type', 'overtime_violation')
+                ->where('created_at', '>=', now()->subMinutes(30))
+                ->exists();
+
+            if (!$recentViolation) {
+                // Log overtime violation
+                DriverEldLog::create([
+                    'driver_id'        => $driver->id,
+                    'waybill_id'       => $waybillId,
+                    'event_type'       => 'overtime_violation',
+                    'status'           => 'violation',
+                    'latitude'         => $request->input('latitude'),
+                    'longitude'        => $request->input('longitude'),
+                    'speed_kmh'        => $request->input('speed_kmh', 0),
+                    'elapsed_seconds'  => $elapsed,
+                    'planned_seconds'  => $planned,
+                    'notes'            => 'Driver exceeded scheduled driving limit of ' . DriverEldLog::formatDuration($planned) . '.',
+                ]);
+
+                // Dispatch notification to Admin, Client Director, Driver
+                $waybill = Waybill::with('vehicle')->find($waybillId);
+                $waybillNo = $waybill?->waybill_number ?? 'N/A';
+                $vehicleFleet = $waybill?->vehicle?->fleet_no ?? $waybill?->vehicle?->truck_no ?? 'Fleet Vehicle';
+                $targetUrl = route('waybill.show', $waybillId ?: 1);
+
+                $recipients = User::role([
+                    Constants::SUPERADMIN,
+                    Constants::ADMIN,
+                    Constants::CLIENT_DIRECTORS,
+                ])->get();
+
+                if ($driver->user) {
+                    $recipients->push($driver->user);
+                }
+
+                $notification = new DriverOvertimeNotification(
+                    driverName: $driver->full_name,
+                    waybillNumber: $waybillNo,
+                    vehicleFleet: $vehicleFleet,
+                    allocatedSeconds: $planned,
+                    actualDrivenSeconds: $elapsed,
+                    targetUrl: $targetUrl
+                );
+
+                foreach ($recipients->unique('id') as $recipient) {
+                    try {
+                        $recipient->notify($notification);
+                    } catch (\Throwable $th) {
+                        Log::warning('Overtime notification error for user ' . $recipient->id . ': ' . $th->getMessage());
+                    }
+                }
+
+                $overtimeNotificationSent = true;
+            }
+        }
+
+        return response()->json([
+            'success'                   => true,
+            'is_overtime'               => $isOvertime,
+            'elapsed_seconds'           => $elapsed,
+            'remaining_seconds'         => max(0, $planned - $elapsed),
+            'overtime_seconds'          => $isOvertime ? ($elapsed - $planned) : 0,
+            'overtime_notification_sent'=> $overtimeNotificationSent,
+        ]);
+    }
+
+    /**
+     * Vehicle movement detected while timer was NOT active
+     */
+    public function movementAlert(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'   => ['required'],
+            'waybill_id'  => ['nullable'],
+            'speed_kmh'   => ['nullable', 'numeric'],
+            'latitude'    => ['nullable', 'numeric'],
+            'longitude'   => ['nullable', 'numeric'],
+        ]);
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+        $speed = (float) $request->input('speed_kmh', 0);
+
+        // Throttle movement alerts: at most 1 log per 3 minutes
+        $recent = DriverEldLog::where('driver_id', $driver->id)
+            ->where('event_type', 'movement_detected')
+            ->where('created_at', '>=', now()->subMinutes(3))
+            ->exists();
+
+        if (!$recent) {
+            DriverEldLog::create([
+                'driver_id'   => $driver->id,
+                'waybill_id'  => $waybillId,
+                'event_type'  => 'movement_detected',
+                'status'      => 'info',
+                'speed_kmh'   => $speed,
+                'latitude'    => $request->input('latitude'),
+                'longitude'   => $request->input('longitude'),
+                'notes'       => "Vehicle in motion ({$speed} km/h) without active duty timer.",
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Movement event recorded.',
+        ]);
+    }
+
+    /**
+     * Add manual remark / annotation to ELD log
+     */
+    public function addRemark(Request $request): JsonResponse
+    {
+        $request->validate([
+            'driver_id'   => ['required'],
+            'waybill_id'  => ['nullable'],
+            'remark'      => ['nullable', 'string', 'max:500'],
+            'notes'       => ['nullable', 'string', 'max:500'],
+            'latitude'    => ['nullable', 'numeric'],
+            'longitude'   => ['nullable', 'numeric'],
+        ]);
+
+        $notes = trim((string) ($request->input('remark') ?: $request->input('notes')));
+        if (empty($notes)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Remark text cannot be empty.',
+            ], 422);
+        }
+
+        $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $waybillId = $request->input('waybill_id');
+
+        $log = DriverEldLog::create([
+            'driver_id'   => $driver->id,
+            'waybill_id'  => $waybillId,
+            'event_type'  => 'manual_remark',
+            'status'      => 'info',
+            'latitude'    => $request->input('latitude'),
+            'longitude'   => $request->input('longitude'),
+            'notes'       => $notes,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Remark added successfully.',
+            'log'     => [
+                'id'          => $log->id,
+                'event_type'  => $log->event_type,
+                'event_label' => $log->event_label,
+                'label'       => $log->event_label,
+                'badge'       => $log->event_badge_class,
+                'badge_class' => $log->event_badge_class,
+                'notes'       => $log->notes,
+                'time'        => $log->created_at->format('H:i:s'),
+                'created_at'  => $log->created_at->format('H:i:s'),
+                'date'        => $log->created_at->format('d M Y'),
+            ]
+        ]);
+    }
+
+    /**
+     * Fetch real-time ELD logs for modal/drawer
+     */
+    public function getLogs(Request $request): JsonResponse
+    {
+        $driverId = $request->input('driver_id');
+        $waybillId = $request->input('waybill_id');
+
+        $logs = DriverEldLog::where('driver_id', $driverId)
+            ->when($waybillId, fn ($q) => $q->where('waybill_id', $waybillId))
+            ->latest()
+            ->take(50)
+            ->get()
+            ->map(fn ($log) => [
+                'id'          => $log->id,
+                'event_type'  => $log->event_type,
+                'event_label' => $log->event_label,
+                'label'       => $log->event_label,
+                'badge'       => $log->event_badge_class,
+                'badge_class' => $log->event_badge_class,
+                'status'      => $log->status,
+                'latitude'    => $log->latitude,
+                'longitude'   => $log->longitude,
+                'speed_kmh'   => $log->speed_kmh,
+                'elapsed'     => $log->elapsed_seconds ? gmdate('H:i:s', $log->elapsed_seconds) : '—',
+                'notes'       => $log->notes,
+                'time'        => $log->created_at->format('H:i:s'),
+                'created_at'  => $log->created_at->format('H:i:s'),
+                'date'        => $log->created_at->format('d M Y'),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'logs'    => $logs,
+        ]);
+    }
+
+    /**
+     * Live telematics endpoint for fallback polling
+     */
+    public function liveTelematics(Request $request): JsonResponse
+    {
+        $vehicleId = $request->input('vehicle_id');
+        if (!$vehicleId) {
+            return response()->json(['success' => false, 'message' => 'No vehicle id provided']);
+        }
+
+        $loc = DB::table('vehicle_current_locations')
+            ->where('vehicle_id', $vehicleId)
+            ->latest('last_received_at')
+            ->first();
+
+        if ($loc) {
+            return response()->json([
+                'success'   => true,
+                'latitude'  => (float) $loc->latitude,
+                'longitude' => (float) $loc->longitude,
+                'speed_kmh' => (float) $loc->speed_kmh,
+                'heading'   => (int) $loc->heading,
+                'time'      => Carbon::parse($loc->gps_time)->toIso8601String(),
+            ]);
+        }
+
+        // Return vehicle default or waybill origin coordinates
+        $vehicle = Vehicle::find($vehicleId);
+        return response()->json([
+            'success'   => false,
+            'message'   => 'No live GPS fix recorded yet',
+            'fleet_no'  => $vehicle?->fleet_no,
+        ]);
+    }
+
+    /**
+     * Parse human duration string (e.g. '14 Hours 33 Mins', '4h', '180') into seconds
+     */
+    protected function parseDurationToSeconds($duration): int
+    {
+        if (empty($duration)) {
+            return 0;
+        }
+
+        if (is_numeric($duration)) {
+            $num = (int) $duration;
+            // If greater than 1000, probably already seconds; if less, assume minutes
+            return $num > 1000 ? $num : $num * 60;
+        }
+
+        $str = strtolower((string) $duration);
+        $totalSeconds = 0;
+
+        if (preg_match('/(\d+)\s*(?:hours|hour|hrs|hr|h)/i', $str, $matches)) {
+            $totalSeconds += (int) $matches[1] * 3600;
+        }
+
+        if (preg_match('/(\d+)\s*(?:minutes|minute|mins|min|m)/i', $str, $matches)) {
+            $totalSeconds += (int) $matches[1] * 60;
+        }
+
+        if ($totalSeconds > 0) {
+            return $totalSeconds;
+        }
+
+        if (preg_match('/^(\d+):(\d+)(?::(\d+))?$/', $str, $matches)) {
+            $hours = (int) $matches[1];
+            $mins = (int) $matches[2];
+            $secs = isset($matches[3]) ? (int) $matches[3] : 0;
+            return ($hours * 3600) + ($mins * 60) + $secs;
+        }
+
+        return 0;
+    }
+}
+

@@ -73,6 +73,11 @@ class Waybill extends Model
         return $this->hasMany(WaybillDriverPlan::class, 'waybill_id')->orderBy('sequence');
     }
 
+    public function eldLogs()
+    {
+        return $this->hasMany(DriverEldLog::class, 'waybill_id');
+    }
+
     public function drivers()
     {
         return $this->hasManyThrough(

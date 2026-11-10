@@ -29,6 +29,10 @@
     </div>
 
     <div class="col-md-6">
+        <x-auth.input-field type="email" name="email" id="email" required="false" place="{{ __('driver@example.com') }}" val="{{$result?->email}}" extraclasses="" label="{{ __('Driver Email (for portal login)') }}" />
+    </div>
+
+    <div class="col-md-6">
         <x-auth.input-field type="date" name="date_of_birth" id="date_of_birth" required="false" place="" val="{{$result?->date_of_birth}}" extraclasses="" label="{{ __('Date of Birth') }}" />
     </div>
 

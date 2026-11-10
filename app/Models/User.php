@@ -103,4 +103,9 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(Post::class, 'author_id');
     }
+
+    public function driverDetail()
+    {
+        return $this->hasOne(DriverDetail::class, 'user_id');
+    }
 }

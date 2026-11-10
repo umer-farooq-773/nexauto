@@ -10,6 +10,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
+
         // Directly add the column using raw SQL
         // Using try-catch to handle if column already exists
         try {

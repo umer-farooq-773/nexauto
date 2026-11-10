@@ -13,6 +13,7 @@ class Constants
     const FIELD_WORKER = 'field_worker';
     const CLIENT_MANAGEMENT = 'client_management';
     const CLIENT_DIRECTORS = 'client_directors';
+    const DRIVER = 'driver';
 
     const DASHBOARD_URL = 'my-account';
 

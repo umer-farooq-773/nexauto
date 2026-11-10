@@ -26,6 +26,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->redirectUsersTo(Constants::DASHBOARD_URL);
+        $middleware->web(append: [
+            \App\Http\Middleware\RestrictDriverToPortal::class,
+        ]);
         $middleware->alias([
             'CheckVerifiedAccount' => \App\Http\Middleware\CheckVerifiedAccount::class,
             'isAdmin' => \App\Http\Middleware\IsAdmin::class,

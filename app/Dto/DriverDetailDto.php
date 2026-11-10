@@ -22,6 +22,7 @@ class DriverDetailDto
     public $license_card;
     public readonly ?string $employer_number;
     public readonly ?string $bvn_number;
+    public readonly ?string $email;
 
     public function __construct($request)
     {
@@ -29,6 +30,7 @@ class DriverDetailDto
         $this->last_name                      = $request['last_name'];
         $this->address                        = $request['address'];
         $this->phone_number                   = $request['phone_number'];
+        $this->email                          = !empty($request['email']) ? strtolower(trim($request['email'])) : null;
         $this->date_of_birth                  = $request['date_of_birth'] ?? null;
         $this->national_id_passport_number    = $request['national_id_passport_number'];
         $this->date_employed                  = $request['date_employed'] ?? null;
@@ -71,6 +73,7 @@ class DriverDetailDto
             'license_card'                   => $this->license_card,
             'bvn_number'                     => $this->bvn_number,
             'employer_number'                => $this->employer_number,
+            'email'                          => $this->email,
         ];
     }
 }

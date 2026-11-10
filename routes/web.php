@@ -183,3 +183,18 @@ Route::group(
 Route::get('/ajax/geoapify/autocomplete', [\App\Http\Controllers\GeoapifyController::class, 'autocomplete'])->name('geoapify.autocomplete');
 Route::post('/ajax/geoapify/routing', [\App\Http\Controllers\GeoapifyController::class, 'routing'])->name('geoapify.routing');
 
+// Driver ELD Single-Screen Portal & Real-time APIs
+Route::middleware(['auth'])->prefix('driver-panel')->as('driver.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\DriverPortalController::class, 'index'])->name('portal');
+    Route::post('/start-duty', [\App\Http\Controllers\DriverPortalController::class, 'startDuty'])->name('start_duty');
+    Route::post('/pause-duty', [\App\Http\Controllers\DriverPortalController::class, 'pauseDuty'])->name('pause_duty');
+    Route::post('/resume-duty', [\App\Http\Controllers\DriverPortalController::class, 'resumeDuty'])->name('resume_duty');
+    Route::post('/end-duty', [\App\Http\Controllers\DriverPortalController::class, 'endDuty'])->name('end_duty');
+    Route::post('/sync-timer', [\App\Http\Controllers\DriverPortalController::class, 'syncTimer'])->name('sync_timer');
+    Route::post('/movement-alert', [\App\Http\Controllers\DriverPortalController::class, 'movementAlert'])->name('movement_alert');
+    Route::post('/add-remark', [\App\Http\Controllers\DriverPortalController::class, 'addRemark'])->name('add_remark');
+    Route::get('/logs', [\App\Http\Controllers\DriverPortalController::class, 'getLogs'])->name('get_logs');
+    Route::get('/live-telematics', [\App\Http\Controllers\DriverPortalController::class, 'liveTelematics'])->name('live_telematics');
+});
+Route::redirect('/driver', '/driver-panel');
+

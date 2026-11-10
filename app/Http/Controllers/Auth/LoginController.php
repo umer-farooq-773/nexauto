@@ -47,6 +47,21 @@ class LoginController extends Controller
         ]);
     }
 
+    protected function authenticated(Request $request, $user)
+    {
+        if ($user->hasRole(Constants::DRIVER) || ($user->driverDetail && !$user->hasAnyRole([
+            Constants::SUPERADMIN,
+            Constants::ADMIN,
+            Constants::CHAMPS_MANAGEMENT,
+            Constants::CLIENT_DIRECTORS,
+            Constants::CLIENT_MANAGEMENT,
+        ]))) {
+            return redirect()->route('driver.portal');
+        }
+
+        return redirect()->intended($this->redirectPath());
+    }
+
     public function login(Request $request)
     {
         $this->validateLogin($request);

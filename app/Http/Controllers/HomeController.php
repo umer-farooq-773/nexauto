@@ -29,6 +29,19 @@ class HomeController extends Controller
      */
     public function index()
     {
+        if (auth()->check()) {
+            $user = auth()->user();
+            if ($user->hasRole(\App\Constants\Constants::DRIVER) || ($user->driverDetail && !$user->hasAnyRole([
+                \App\Constants\Constants::SUPERADMIN,
+                \App\Constants\Constants::ADMIN,
+                \App\Constants\Constants::CHAMPS_MANAGEMENT,
+                \App\Constants\Constants::CLIENT_DIRECTORS,
+                \App\Constants\Constants::CLIENT_MANAGEMENT,
+            ]))) {
+                return redirect()->route('driver.portal');
+            }
+        }
+
         $result = [
             'total_vehicle'      => Vehicle::count(),
             'total_driver_mate'  => DriverMate::count(),

@@ -163,6 +163,7 @@ Route::group(
                 Route::post('store', 'store')->name('store')->middleware('can:add_driver');
                 Route::get('edit/{driver}', 'edit')->name('edit')->middleware('can:edit_driver');
                 Route::put('update/{driver}', 'update')->name('update')->middleware('can:edit_driver');
+                Route::get('resend-credentials/{driver}', 'resendCredentials')->name('resend_credentials')->middleware('can:edit_driver');
                 Route::delete('delete/{driver}', 'destroy')->name('destroy')->middleware('can:delete_driver');
             });
 

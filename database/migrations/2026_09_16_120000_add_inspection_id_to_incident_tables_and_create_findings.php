@@ -37,7 +37,10 @@ return new class extends Migration
         if (!Schema::hasTable('goods_inspection_findings')) {
             Schema::create('goods_inspection_findings', function (Blueprint $table) {
                 $table->uuid('id')->primary();
-                $table->char('inspection_id', 36)->charset('ascii')->collation('ascii_general_ci');
+                $col = $table->char('inspection_id', 36);
+                if (DB::getDriverName() !== 'sqlite') {
+                    $col->charset('ascii')->collation('ascii_general_ci');
+                }
                 $table->string('finding_type');
                 $table->text('remarks')->nullable();
                 $table->string('status')->default('0');
@@ -76,6 +79,15 @@ return new class extends Migration
 
     private function ensureInspectionForeignKey(string $table, bool $cascade): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            if (!Schema::hasColumn($table, 'inspection_id')) {
+                Schema::table($table, function (Blueprint $blueprint) {
+                    $blueprint->char('inspection_id', 36)->nullable();
+                });
+            }
+            return;
+        }
+
         if (!Schema::hasColumn($table, 'inspection_id')) {
             Schema::table($table, function (Blueprint $blueprint) {
                 $blueprint->char('inspection_id', 36)

@@ -42,7 +42,11 @@ class DriverDetailController extends BaseController
     {
         $data = $this->_repo->show($id);
         if (!$data) abort(404);
-        $data->load('vehicles');
+        $data->load([
+            'vehicles',
+            'eldLogs' => fn ($q) => $q->with(['waybill.vehicle', 'vehicle'])->latest(),
+            'driverPlans' => fn ($q) => $q->with(['waybill.vehicle', 'waybill.status', 'waybill.route_trip'])->latest(),
+        ]);
         return view($this->_directory . '.show', compact('data'));
     }
 
@@ -86,6 +90,20 @@ class DriverDetailController extends BaseController
                 $errorMessage = config('app.debug') ? $th->getMessage() : __('language.something_went_wrong');
                 return redirect()->back()->withInput()->with('error', $errorMessage);
             }
+        }
+    }
+
+    public function resendCredentials($id)
+    {
+        try {
+            $creds = $this->_repo->resendCredentials($id);
+            return redirect()->back()->with('success', __('Credentials sent to :email (Password: :password)', [
+                'email'    => $creds['email'],
+                'password' => $creds['password'],
+            ]));
+        } catch (\Throwable $th) {
+            \Log::error('Resend Driver Credentials Error: ' . $th->getMessage());
+            return redirect()->back()->with('error', $th->getMessage());
         }
     }
 }

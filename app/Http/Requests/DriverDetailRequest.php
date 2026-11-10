@@ -21,6 +21,10 @@ class DriverDetailRequest extends FormRequest
             'last_name'                     => ['required', 'string', 'max:255'],
             'address'                       => ['required', 'string', 'max:500'],
             'phone_number'                  => ['required', 'string', 'max:20'],
+            'email'                         => [
+                'nullable', 'email', 'max:255',
+                Rule::unique('driver_details', 'email')->ignore($driverId),
+            ],
             'date_of_birth'                 => ['nullable', 'date'],
             'national_id_passport_number'   => [
                 'required', 'string', 'max:100',
