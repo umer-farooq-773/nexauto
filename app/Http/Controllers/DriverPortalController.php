@@ -666,6 +666,93 @@ class DriverPortalController extends Controller
     }
 
     /**
+     * Real-time Portal Sync State (Waybill status, Driver plan, Vehicle & Duration)
+     */
+    public function syncState(Request $request): JsonResponse
+    {
+        $driverId = $request->input('driver_id');
+        $waybillId = $request->input('waybill_id');
+
+        $driver = DriverDetail::find($driverId);
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'Driver not found'], 404);
+        }
+
+        $waybill = null;
+        if ($waybillId) {
+            $waybill = Waybill::with(['status', 'vehicle'])->find($waybillId);
+        }
+
+        if (!$waybill) {
+            $waybill = $driver->driverPlans()
+                ->whereHas('waybill', function ($q) {
+                    $q->whereHas('status', fn ($sq) => $sq->whereIn('value', [0, 1, 2, 5]));
+                })
+                ->latest()
+                ->first()
+                ?->waybill;
+        }
+
+        if (!$waybill) {
+            $waybill = $driver->driverPlans()->latest()->first()?->waybill;
+        }
+
+        if ($waybill) {
+            $waybill->loadMissing(['status', 'vehicle']);
+        }
+
+        $plan = null;
+        if ($waybill) {
+            $plan = WaybillDriverPlan::where('waybill_id', $waybill->id)
+                ->where('driver_id', $driver->id)
+                ->first();
+        }
+
+        $statusValue = $waybill?->status?->value !== null ? (int) $waybill->status->value : null;
+        $isDelivered = $statusValue === 3;
+        $isCompleted = in_array($statusValue, [3, 4, 6], true);
+
+        $badgeClass = match ($statusValue) {
+            0 => 'bg-warning-subtle text-warning border border-warning-subtle',
+            1 => 'bg-info-subtle text-info border border-info-subtle',
+            2 => 'bg-primary text-white',
+            3 => 'bg-success text-white',
+            4 => 'bg-danger text-white',
+            5 => 'bg-secondary text-white',
+            6 => 'bg-dark text-white',
+            default => 'bg-secondary-subtle text-secondary',
+        };
+
+        return response()->json([
+            'success'     => true,
+            'server_time' => now()->format('H:i:s'),
+            'waybill'     => $waybill ? [
+                'id'             => $waybill->id,
+                'waybill_number' => $waybill->waybill_number,
+                'status_id'      => $waybill->status_id,
+                'status_value'   => $statusValue,
+                'status_label'   => $waybill->status_label,
+                'status_badge'   => $badgeClass,
+                'is_delivered'   => $isDelivered,
+                'is_completed'   => $isCompleted,
+                'origin'         => $waybill->origin,
+                'destination'    => $waybill->destination,
+            ] : null,
+            'driver_plan' => $plan ? [
+                'id'                    => $plan->id,
+                'status'                => $plan->status,
+                'planned_seconds'       => (int) $plan->planned_seconds,
+                'actual_driven_seconds' => (int) $plan->actual_driven_seconds,
+                'formatted_planned'     => DriverEldLog::formatDuration($plan->planned_seconds),
+            ] : null,
+            'vehicle' => $waybill?->vehicle ? [
+                'id'       => $waybill->vehicle->id,
+                'fleet_no' => $waybill->vehicle->fleet_no ?? $waybill->vehicle->truck_no,
+            ] : null,
+        ]);
+    }
+
+    /**
      * Parse human duration string (e.g. '14 Hours 33 Mins', '4h', '180') into seconds
      */
     protected function parseDurationToSeconds($duration): int

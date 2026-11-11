@@ -142,21 +142,26 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
             $result->update($dataArray);
             $this->syncCargos($result, $cargos, $dataArray);
 
+            $statusValue = \App\Models\Status::query()->whereKey($dataArray['status_id'] ?? null)->value('value');
+            if (in_array((int) $statusValue, [3, 4, 6], true)) {
+                $result->driverPlans()->whereIn('status', ['active', 'in_progress'])->update(['status' => 'completed']);
+            }
+
             return $result->fresh(['cargos', 'driverPlans.driver']);
         });
     }
 
     public function lockVehicleForWaybill(string $vehicleId, ?string $ignoreWaybillId = null, bool $requireAvailability = true): void
     {
+        if (!$requireAvailability || empty($vehicleId)) {
+            return;
+        }
+
         $vehicle = Vehicle::query()->lockForUpdate()->find($vehicleId);
         if (!$vehicle) {
             throw ValidationException::withMessages([
                 'vehicle_id' => 'The selected vehicle is no longer available.',
             ]);
-        }
-
-        if (!$requireAvailability) {
-            return;
         }
 
         $activeWaybill = Waybill::query()
@@ -246,17 +251,14 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
     {
         $drivers = array_values($drivers);
         $existing = $waybill->driverPlans()->orderBy('sequence')->get();
-        foreach ($existing->where('status', '!=', 'pending') as $plan) {
-            $submitted = $drivers[$plan->sequence - 1] ?? null;
-            $submittedSeconds = isset($submitted['duration_minutes']) && $submitted['duration_minutes'] !== ''
-                ? (int) $submitted['duration_minutes'] * 60
-                : null;
 
-            if ($submitted === null
-                || (string) $submitted['driver_id'] !== (string) $plan->driver_id
-                || $submittedSeconds !== $plan->planned_seconds) {
+        // Only active (in-progress) plans cannot have their assigned driver swapped mid-trip
+        foreach ($existing->where('status', 'active') as $plan) {
+            $submitted = $drivers[$plan->sequence - 1] ?? null;
+
+            if ($submitted === null || (string) $submitted['driver_id'] !== (string) $plan->driver_id) {
                 throw ValidationException::withMessages([
-                    'drivers' => "Driver plan row {$plan->sequence} is {$plan->status} and cannot be changed or removed.",
+                    'drivers' => "Driver plan row {$plan->sequence} is active and cannot be changed or removed.",
                 ]);
             }
         }
@@ -282,23 +284,30 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
                 : null;
             $plan = $waybill->driverPlans()->where('driver_id', (string) $driver['driver_id'])->first();
 
-            if ($plan && $plan->status !== 'pending') {
+            if ($plan) {
+                $plan->sequence = $sequence;
+                if ($seconds !== null || $plan->status === 'pending') {
+                    $plan->planned_seconds = $seconds;
+                }
+                $plan->save();
                 continue;
             }
 
-            if (!$plan) {
-                $waybill->driverPlans()->create([
-                    'driver_id' => (string) $driver['driver_id'],
-                    'sequence' => $sequence,
-                    'planned_seconds' => $seconds,
-                    'status' => 'pending',
-                ]);
+            // If not found by driver_id, check if there is an existing plan at this sequence to update
+            $planAtSeq = $existing->firstWhere('sequence', $sequence);
+            if ($planAtSeq && $planAtSeq->status !== 'active') {
+                $planAtSeq->driver_id = (string) $driver['driver_id'];
+                $planAtSeq->planned_seconds = $seconds;
+                $planAtSeq->save();
                 continue;
             }
 
-            $plan->sequence = $sequence;
-            $plan->planned_seconds = $seconds;
-            $plan->save();
+            $waybill->driverPlans()->create([
+                'driver_id' => (string) $driver['driver_id'],
+                'sequence' => $sequence,
+                'planned_seconds' => $seconds,
+                'status' => 'pending',
+            ]);
         }
     }
 

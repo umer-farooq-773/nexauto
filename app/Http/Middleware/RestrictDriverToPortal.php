@@ -28,13 +28,18 @@ class RestrictDriverToPortal
             );
 
             if ($isDriver) {
+                // Allow logout explicitly so drivers can always sign out safely
+                if ($request->routeIs('logout') || $request->is('logout') || $request->is('*/logout') || $request->is('my-account/logout')) {
+                    return $next($request);
+                }
+
                 // If attempting to access backoffice /my-account routes, strictly redirect to driver portal
                 if ($request->is('my-account*')) {
                     return redirect()->route('driver.portal');
                 }
 
-                // Allow driver portal routes, logout, and driver AJAX endpoints
-                if ($request->is('driver-panel*') || $request->routeIs('driver.*') || $request->is('logout') || $request->routeIs('logout')) {
+                // Allow driver portal routes and driver AJAX endpoints
+                if ($request->is('driver-panel*') || $request->routeIs('driver.*')) {
                     return $next($request);
                 }
 

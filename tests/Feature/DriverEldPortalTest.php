@@ -391,6 +391,15 @@ class DriverEldPortalTest extends TestCase
         $res2->assertRedirect(route('driver.portal'));
     }
 
+    public function test_driver_can_logout_successfully(): void
+    {
+        $driver = $this->createDriver();
+
+        $res = $this->actingAs($driver->user)->post(route('logout'));
+        $res->assertRedirect(route('login'));
+        $this->assertGuest();
+    }
+
     public function test_driver_show_renders_eld_logs_and_waybill_breakdown(): void
     {
         $driver = $this->createDriver();
@@ -453,5 +462,55 @@ class DriverEldPortalTest extends TestCase
         $res->assertSee('Lahore');
         $res->assertSee('Driver started trip from Islamabad hub.');
         $res->assertSee('Fuel stop at Bhera service area.');
+    }
+
+    public function test_driver_can_sync_real_time_state_with_delivered_status(): void
+    {
+        $driver = $this->createDriver();
+
+        $deliveredStatus = Status::firstOrCreate(
+            ['value' => 3],
+            ['name' => 'Delivered', 'badge_label' => 'Delivered', 'badge_class' => 'bg-success']
+        );
+
+        $waybill = Waybill::create([
+            'waybill_number' => 'WB-SYNC-' . rand(100, 999),
+            'vehicle_id'     => $this->vehicle->id,
+            'driver_id'      => $driver->id,
+            'status_id'      => $deliveredStatus->id,
+            'origin'         => 'Islamabad',
+            'destination'    => 'Karachi',
+            'dispatch_date'  => now()->toDateString(),
+        ]);
+
+        $plan = WaybillDriverPlan::create([
+            'waybill_id'            => $waybill->id,
+            'driver_id'             => $driver->id,
+            'sequence'              => 1,
+            'planned_seconds'       => 14400,
+            'actual_driven_seconds' => 744,
+            'status'                => 'completed',
+        ]);
+
+        $res = $this->actingAs($driver->user)->getJson(route('driver.sync_state', [
+            'driver_id'  => $driver->id,
+            'waybill_id' => $waybill->id,
+        ]));
+
+        $res->assertStatus(200);
+        $res->assertJson([
+            'success' => true,
+            'waybill' => [
+                'id'           => $waybill->id,
+                'status_value' => 3,
+                'status_label' => 'Delivered',
+                'is_delivered' => true,
+                'is_completed' => true,
+            ],
+            'driver_plan' => [
+                'id'              => $plan->id,
+                'planned_seconds' => 14400,
+            ],
+        ]);
     }
 }

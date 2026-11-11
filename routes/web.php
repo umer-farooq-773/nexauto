@@ -114,6 +114,8 @@ Auth::routes(
     ]
 );
 
+Route::post('/logout', [\App\Http\Controllers\HomeController::class, 'logout']);
+
     Route::get('/debug-log', function () {
         return nl2br(file_get_contents(storage_path('logs/laravel.log')));
     });
@@ -195,6 +197,7 @@ Route::middleware(['auth'])->prefix('driver-panel')->as('driver.')->group(functi
     Route::post('/add-remark', [\App\Http\Controllers\DriverPortalController::class, 'addRemark'])->name('add_remark');
     Route::get('/logs', [\App\Http\Controllers\DriverPortalController::class, 'getLogs'])->name('get_logs');
     Route::get('/live-telematics', [\App\Http\Controllers\DriverPortalController::class, 'liveTelematics'])->name('live_telematics');
+    Route::get('/sync-state', [\App\Http\Controllers\DriverPortalController::class, 'syncState'])->name('sync_state');
 });
 Route::redirect('/driver', '/driver-panel');
 

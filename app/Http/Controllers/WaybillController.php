@@ -936,7 +936,12 @@ class WaybillController extends BaseController
         $status = \App\Models\Status::firstWhere('value', $statusValue);
 
         if (!$status) {
-            return back()->with('error', 'Status not found.');
+            $status = \App\Models\Status::create([
+                'value'       => $statusValue,
+                'name'        => is_string($statusInput) ? ucfirst($statusInput) : "Status {$statusValue}",
+                'badge_label' => is_string($statusInput) ? ucfirst($statusInput) : "Status {$statusValue}",
+                'badge_class' => 'bg-secondary',
+            ]);
         }
 
         // Check if waybill has unresolved incidents requiring client director approval

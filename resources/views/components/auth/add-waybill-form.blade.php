@@ -1175,8 +1175,6 @@
             // Ordered waybill driver plan repeater.
             function updateDriverTimeLimit() {
                 var $durations = $('#waybill-driver-rows .driver-duration');
-                var limitValue = $('#vehicle_id option:selected').attr('data-min-trip-seconds');
-                var limitSeconds = Number(limitValue);
                 var totalMinutes = 0;
                 $durations.each(function() {
                     var value = Number($(this).val());
@@ -1185,19 +1183,10 @@
                 });
 
                 var $feedback = $('#driver-time-limit-feedback');
-                if (limitValue === undefined || limitValue === '' || !Number.isFinite(limitSeconds) || limitSeconds < 0 || $('#vehicle_id').val() === '') {
-                    $feedback.text('').removeClass('text-danger text-muted');
-                    return;
-                }
-
-                var limitMinutes = limitSeconds / 60;
-                if (totalMinutes * 60 > limitSeconds) {
-                    var message = 'Total planned driver time (' + totalMinutes + ' min) exceeds this vehicle’s trip duration limit (' + (Math.round(limitMinutes * 10) / 10) + ' min).';
-                    $feedback.text(message).removeClass('text-muted').addClass('text-danger');
-                    var $lastDuration = $durations.filter(function() { return Number($(this).val()) > 0; }).last();
-                    if ($lastDuration.length) $lastDuration[0].setCustomValidity(message);
+                if (totalMinutes > 0) {
+                    $feedback.text('Total planned driving time: ' + totalMinutes + ' min').removeClass('text-danger').addClass('text-muted');
                 } else {
-                    $feedback.text('Planned time: ' + totalMinutes + ' / ' + (Math.round(limitMinutes * 10) / 10) + ' min').removeClass('text-danger').addClass('text-muted');
+                    $feedback.text('').removeClass('text-danger text-muted');
                 }
             }
 

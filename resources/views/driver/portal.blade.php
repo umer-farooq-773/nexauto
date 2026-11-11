@@ -203,6 +203,14 @@
             border: 1px solid #cbd5e1;
         }
 
+        @keyframes riSpin {
+            100% { transform: rotate(360deg); }
+        }
+        .ri-spin {
+            display: inline-block;
+            animation: riSpin 0.8s linear infinite;
+        }
+
         /* ── Action Buttons ── */
         .btn-duty-action {
             border-radius: 24px;
@@ -552,9 +560,9 @@
                 @if($waybill)
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <span class="badge bg-light text-dark border border-secondary border-opacity-25" style="font-size: 11px;">
-                            <i class="ri-route-line text-primary me-1"></i>Waybill #{{ $waybill->waybill_number }}
+                            <i class="ri-route-line text-primary me-1"></i>Waybill #<span id="waybill-number-display">{{ $waybill->waybill_number }}</span>
                         </span>
-                        <span class="badge bg-secondary-subtle text-secondary" style="font-size: 10px;">{{ $waybill->status_label }}</span>
+                        <span id="waybill-status-pill" class="badge {{ match($waybill->status?->value) { 2 => 'bg-primary text-white', 3 => 'bg-success text-white', 4 => 'bg-danger text-white', 5 => 'bg-secondary text-white', default => 'bg-secondary-subtle text-secondary' } }}" style="font-size: 10px;">{{ $waybill->status_label }}</span>
                         <span class="text-muted d-none d-lg-inline" style="font-size: 11px;">
                             {{ Str::limit($waybill->origin, 14) }} <i class="ri-arrow-right-line text-primary"></i> {{ Str::limit($waybill->destination, 14) }}
                         </span>
@@ -573,7 +581,7 @@
 
                     <div class="border-start border-secondary border-opacity-25 ps-3 text-start d-none d-sm-block">
                         <div class="text-muted" style="font-size: 10px;">SHIFT ALLOTMENT</div>
-                        <div class="fw-bold text-dark font-monospace" style="font-size: 13px;">
+                        <div id="shift-allotment-display" class="fw-bold text-dark font-monospace" style="font-size: 13px;">
                             {{ \App\Models\DriverEldLog::formatDuration($plannedSeconds) }}
                         </div>
                         <div id="cockpit-overtime-pill" class="text-danger fw-bold font-monospace {{ $isOvertime ? '' : 'd-none' }}" style="font-size: 11px;">
@@ -641,6 +649,12 @@
                     </div>
                 @endif
 
+                {{-- Real-time Sync Button --}}
+                <button type="button" id="btn-sync-state" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm" title="Sync Real-Time Data (Status, Waybill, Shifts)" style="font-size: 11px;">
+                    <i class="ri-refresh-line" id="sync-btn-icon"></i>
+                    <span>Sync</span>
+                </button>
+
                 {{-- Real-time Driver Log Trigger --}}
                 <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm" data-bs-toggle="offcanvas" data-bs-target="#driverLogOffcanvas">
                     <i class="ri-file-list-3-line"></i>
@@ -648,9 +662,13 @@
                     <span id="log-count-badge" class="badge bg-primary text-white ms-1" style="font-size: 9px;">{{ $eldLogs->count() }}</span>
                 </button>
 
-                {{-- PWA Install Button --}}
-                <button id="pwa-install-btn" class="btn btn-sm btn-outline-success rounded-pill px-2 py-1 d-flex align-items-center gap-1" title="Install App to Home Screen" style="font-size: 11px;">
-                    <i class="ri-download-cloud-line"></i> <span class="d-none d-md-inline">Install App</span>
+                {{-- PWA Install Button (Sharp SVG Download Icon) --}}
+                <button id="pwa-install-btn" class="btn btn-sm btn-success rounded-pill px-3 py-1 d-flex align-items-center gap-1 fw-bold shadow-sm" title="Install NexAuto ELD App" style="font-size: 11px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                        <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                    </svg>
+                    <span>Install App</span>
                 </button>
 
                 {{-- Sign Out --}}
@@ -829,7 +847,10 @@
             <div class="modal-header border-bottom">
                 <div class="d-flex align-items-center gap-2">
                     <div class="p-2 rounded-3 bg-success bg-opacity-10 text-success">
-                        <i class="ri-download-cloud-line fs-4"></i>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                        </svg>
                     </div>
                     <div>
                         <h5 class="modal-title fw-bold text-dark mb-0" id="pwaInstallModalLabel">Install NexAuto ELD App</h5>
@@ -839,16 +860,23 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body py-4 text-secondary small">
-                <p class="text-dark fw-medium mb-3">Install this ELD portal on your Windows desktop, tablet, or phone for full-screen mode and instant access.</p>
+                {{-- InPrivate / Incognito Warning Alert --}}
+                <div class="alert alert-warning border border-warning border-opacity-50 rounded-3 small mb-3 d-flex align-items-start gap-2">
+                    <i class="ri-alert-line fs-5 flex-shrink-0 text-warning mt-1"></i>
+                    <div>
+                        <strong class="text-dark d-block mb-1">Notice for InPrivate / Incognito Browsing:</strong>
+                        <span>If you are browsing in an <strong>InPrivate / Incognito tab</strong>, Microsoft Edge &amp; Chrome block PWA installation by design for privacy. Open this link in a <strong>normal (regular) browser tab</strong> to install!</span>
+                    </div>
+                </div>
 
                 <div class="bg-light p-3 rounded-3 border mb-3">
                     <div class="fw-bold text-primary mb-2"><i class="ri-edge-line me-1"></i> Microsoft Edge (Windows):</div>
-                    <p class="mb-2">1. Look at the top right of your address bar (URL bar) — click the <strong>"App available. Install NexAuto ELD"</strong> icon <i class="ri-computer-line text-primary"></i>.</p>
+                    <p class="mb-2">1. Look at the right end of your address bar (URL bar) — click the <strong>"App available. Install NexAuto ELD"</strong> icon <i class="ri-computer-line text-primary"></i>.</p>
                     <p class="mb-0">2. Or click the Edge menu <strong>`...`</strong> (top right) ➔ <strong>Apps</strong> ➔ <strong>Install this site as an app</strong>.</p>
                 </div>
 
                 <div class="bg-light p-3 rounded-3 border mb-3">
-                    <div class="fw-bold text-success mb-2"><i class="ri-chrome-line me-1"></i> Google Chrome (Desktop & Android):</div>
+                    <div class="fw-bold text-success mb-2"><i class="ri-chrome-line me-1"></i> Google Chrome (Desktop &amp; Android):</div>
                     <p class="mb-0">Click the <strong>Install</strong> icon in the address bar or tap the 3-dots menu ➔ <strong>Add to Home screen</strong> / <strong>Install App</strong>.</p>
                 </div>
 
@@ -858,12 +886,17 @@
                 </div>
             </div>
             <div class="modal-footer border-top d-flex justify-content-between">
-                <button type="button" id="trigger-prompt-direct-btn" class="btn btn-success rounded-pill px-4 fw-bold">
-                    <i class="ri-install-line me-1"></i> Launch Install Now
+                <button type="button" id="copy-portal-link-btn" class="btn btn-outline-primary rounded-pill px-3 fw-semibold">
+                    <i class="ri-file-copy-line me-1"></i> Copy Link
                 </button>
-                <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
-                    Close
-                </button>
+                <div class="d-flex gap-2">
+                    <button type="button" id="trigger-prompt-direct-btn" class="btn btn-success rounded-pill px-4 fw-bold">
+                        <i class="ri-download-cloud-line me-1"></i> Direct Install
+                    </button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1012,7 +1045,8 @@
             movementAlert:   '{{ route('driver.movement_alert') }}',
             addRemark:       '{{ route('driver.add_remark') }}',
             getLogs:         '{{ route('driver.get_logs') }}',
-            liveTelematics:  '{{ route('driver.live_telematics') }}'
+            liveTelematics:  '{{ route('driver.live_telematics') }}',
+            syncState:       '{{ route('driver.sync_state') }}'
         }
     };
 
@@ -1021,7 +1055,9 @@
         elapsedSeconds: {{ (int) $actualDrivenSeconds }},
         intervalId:     null,
         isOvertime:     {{ $isOvertime ? 'true' : 'false' }},
-        lastNotifiedOvertime: false
+        // If already in overtime on page load (e.g. after logout/refresh), mark as already notified
+        // so the overtime violation modal does NOT re-pop every time the page loads or the driver logs out
+        lastNotifiedOvertime: {{ $isOvertime ? 'true' : 'false' }}
     };
 
     let vehicleState = {
@@ -1170,14 +1206,15 @@
                 cockpitOvertimePill.classList.remove('d-none');
             }
 
-            // Trigger Overtime Violation Modal & Alarm on first tick of overtime
-            if (!timerState.lastNotifiedOvertime) {
+            // Trigger Overtime Violation Modal & Alarm only during an active timer tick
+            // (not on page load/refresh or after logout — lastNotifiedOvertime guards this)
+            if (!timerState.lastNotifiedOvertime && timerState.isRunning) {
                 timerState.lastNotifiedOvertime = true;
                 playChime([520, 440, 520, 440], 250, 'sawtooth');
                 showFloatingToast('🚨 Overtime Violation', 'You have exceeded your scheduled driving limit!', 'danger');
                 const modalEl = document.getElementById('overtimeViolationModal');
                 if (modalEl) {
-                    const modal = new bootstrap.Modal(modalEl);
+                    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
                     modal.show();
                 }
             }
@@ -1742,13 +1779,45 @@
             setTileLayer(!isSatellite);
         });
 
+        // Sync Real-Time Data Button
+        document.getElementById('btn-sync-state')?.addEventListener('click', function() {
+            syncRealTimeState(true);
+        });
+
         // PWA Install Button
         document.getElementById('pwa-install-btn')?.addEventListener('click', function() {
             handlePwaInstall();
         });
 
         document.getElementById('trigger-prompt-direct-btn')?.addEventListener('click', function() {
-            handlePwaInstall();
+            if (deferredPwaPrompt) {
+                const modalEl = document.getElementById('pwaInstallModal');
+                if (modalEl) {
+                    const inst = bootstrap.Modal.getInstance(modalEl);
+                    if (inst) inst.hide();
+                }
+                deferredPwaPrompt.prompt();
+                deferredPwaPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        showFloatingToast('PWA Installed', 'NexAuto ELD installed!', 'success');
+                        deferredPwaPrompt = null;
+                    }
+                });
+            } else {
+                showFloatingToast('Notice', 'InPrivate/Incognito blocks auto-prompt. Please open in a regular Edge window or click Edge Menu (...) > Apps > Install.', 'info');
+            }
+        });
+
+        // Copy portal link button
+        document.getElementById('copy-portal-link-btn')?.addEventListener('click', function() {
+            const url = window.location.origin + '/driver-panel';
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(url).then(() => {
+                    showFloatingToast('Link Copied', 'URL copied! Paste in a regular (non-InPrivate) browser tab to install.', 'success');
+                });
+            } else {
+                prompt('Copy this URL and open in a regular window:', url);
+            }
         });
     }
 
@@ -1766,10 +1835,109 @@
         } else {
             const modalEl = document.getElementById('pwaInstallModal');
             if (modalEl) {
-                const modal = new bootstrap.Modal(modalEl);
+                // Remove any dangling backdrops first to prevent darkening
+                document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
                 modal.show();
             }
         }
+    }
+
+    // ── Real-Time Portal State Sync (Waybill status, Duration & Driver Plan) ──
+    function syncRealTimeState(manual = false) {
+        const icon = document.getElementById('sync-btn-icon');
+        if (manual && icon) {
+            icon.classList.add('ri-spin');
+        }
+
+        fetch(`${CONFIG.routes.syncState}?driver_id=${CONFIG.driverId}&waybill_id=${CONFIG.waybillId || ''}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data || !data.success) return;
+
+                // 1. Update Waybill Status
+                if (data.waybill) {
+                    const statusPill = document.getElementById('waybill-status-pill');
+                    if (statusPill) {
+                        statusPill.textContent = data.waybill.status_label;
+                        statusPill.className = 'badge ' + (data.waybill.status_badge || 'bg-secondary text-white');
+                    }
+
+                    const numDisplay = document.getElementById('waybill-number-display');
+                    if (numDisplay && data.waybill.waybill_number) {
+                        numDisplay.textContent = data.waybill.waybill_number;
+                    }
+
+                    // If waybill is Delivered (3) or Completed (4/6)
+                    if (data.waybill.is_delivered || data.waybill.is_completed) {
+                        if (timerState.isRunning) {
+                            if (timerState.intervalId) clearInterval(timerState.intervalId);
+                            timerState.isRunning = false;
+                        }
+
+                        const dutyStatusBadge = document.getElementById('duty-status-badge');
+                        const dutyStatusText = document.getElementById('duty-status-text');
+                        if (dutyStatusBadge) {
+                            dutyStatusBadge.className = 'duty-pill stopped';
+                        }
+                        if (dutyStatusText) {
+                            dutyStatusText.textContent = data.waybill.is_delivered ? 'DELIVERED (OFF DUTY)' : 'COMPLETED';
+                        }
+
+                        // Hide action buttons
+                        document.getElementById('btn-start-duty')?.classList.add('d-none');
+                        document.getElementById('btn-pause-duty')?.classList.add('d-none');
+                        document.getElementById('btn-resume-duty')?.classList.add('d-none');
+                        document.getElementById('btn-end-duty')?.classList.add('d-none');
+
+                        // Update countdown caption
+                        const countdownCaption = document.getElementById('countdown-caption');
+                        if (countdownCaption) {
+                            countdownCaption.textContent = data.waybill.is_delivered ? 'WAYBILL DELIVERED' : 'TRIP COMPLETED';
+                            countdownCaption.className = 'text-uppercase fw-bold text-success';
+                        }
+
+                        const logStatBalance = document.getElementById('log-stat-balance');
+                        if (logStatBalance) {
+                            logStatBalance.textContent = data.waybill.status_label || 'Delivered';
+                            logStatBalance.className = 'fw-bold text-success font-monospace';
+                        }
+                    }
+                }
+
+                // 2. Update Driver Plan Allotment & Timer
+                if (data.driver_plan && Number.isFinite(data.driver_plan.planned_seconds)) {
+                    if (data.driver_plan.planned_seconds > 0 && data.driver_plan.planned_seconds !== CONFIG.plannedSeconds) {
+                        CONFIG.plannedSeconds = data.driver_plan.planned_seconds;
+                        const allotmentDisplay = document.getElementById('shift-allotment-display');
+                        if (allotmentDisplay) {
+                            allotmentDisplay.textContent = data.driver_plan.formatted_planned || formatTime(CONFIG.plannedSeconds);
+                        }
+                        const logStatLimit = document.getElementById('log-stat-limit');
+                        if (logStatLimit) {
+                            logStatLimit.textContent = data.driver_plan.formatted_planned || formatTime(CONFIG.plannedSeconds);
+                        }
+                        updateTimerUI();
+                    }
+                }
+
+                // 3. Refresh activity logs
+                refreshLogsList();
+
+                if (manual) {
+                    showFloatingToast('🔄 Synced', `Waybill status: ${data.waybill ? data.waybill.status_label : 'Active'}`, 'success');
+                }
+            })
+            .catch(() => {
+                if (manual) {
+                    showFloatingToast('Sync Error', 'Could not refresh real-time data from server.', 'secondary');
+                }
+            })
+            .finally(() => {
+                if (icon) {
+                    setTimeout(() => icon.classList.remove('ri-spin'), 600);
+                }
+            });
     }
 
     function refreshLogsList() {
@@ -1853,15 +2021,25 @@
             // Auto-open modal on fresh login
             const modalEl = document.getElementById('initialStartModal');
             if (modalEl) {
-                const startModal = new bootstrap.Modal(modalEl);
+                const startModal = bootstrap.Modal.getOrCreateInstance(modalEl);
                 startModal.show();
             }
         }
 
+        // Global backdrop cleaner to prevent screen darkening on repeated modal triggers
+        document.addEventListener('hidden.bs.modal', function () {
+            if (document.querySelectorAll('.modal.show').length === 0) {
+                document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            }
+        });
+
         initWialonTracking();
 
-        // Background poll logs every 20 seconds
-        setInterval(refreshLogsList, 20000);
+        // Background real-time sync every 15 seconds (updates waybill status, plan, and logs)
+        setInterval(() => syncRealTimeState(false), 15000);
     });
 
 })();
