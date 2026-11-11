@@ -513,4 +513,104 @@ class DriverEldPortalTest extends TestCase
             ],
         ]);
     }
+
+    public function test_driver_history_page_renders_successfully(): void
+    {
+        $driver = $this->createDriver();
+
+        $waybill = Waybill::create([
+            'waybill_number' => 'WB-HIST-01',
+            'vehicle_id'     => $this->vehicle->id,
+            'driver_id'      => $driver->id,
+            'status_id'      => $this->inTransit->id,
+            'origin'         => 'Lahore',
+            'destination'    => 'Peshawar',
+            'dispatch_date'  => now()->toDateString(),
+        ]);
+
+        WaybillDriverPlan::create([
+            'waybill_id'            => $waybill->id,
+            'driver_id'             => $driver->id,
+            'sequence'              => 1,
+            'planned_seconds'       => 14400,
+            'actual_driven_seconds' => 3600,
+            'status'                => 'completed',
+        ]);
+
+        $response = $this->actingAs($driver->user)->get(route('driver.history'));
+
+        $response->assertStatus(200);
+        $response->assertSee('Driver History & Activity Log', false);
+        $response->assertSee('WB-HIST-01');
+        $response->assertSee('Lahore');
+        $response->assertSee('Peshawar');
+        $response->assertSee('Total Trips');
+    }
+
+    public function test_driver_history_logs_endpoint_returns_json(): void
+    {
+        $driver = $this->createDriver();
+
+        DriverEldLog::create([
+            'driver_id'        => $driver->id,
+            'vehicle_id'       => $this->vehicle->id,
+            'event_type'       => 'start_duty',
+            'status'           => 'driving',
+            'latitude'         => 31.5204,
+            'longitude'        => 74.3587,
+            'speed_kmh'        => 45,
+            'elapsed_seconds'  => 120,
+            'notes'            => 'Trip started',
+        ]);
+
+        $response = $this->actingAs($driver->user)->getJson(route('driver.history_logs'));
+
+        $response->assertStatus(200);
+        $response->assertJson([
+            'success' => true,
+        ]);
+        $response->assertJsonFragment([
+            'notes' => 'Trip started',
+        ]);
+    }
+
+    public function test_driver_portal_delivered_waybill_hides_duty_controls_and_start_modal(): void
+    {
+        $driver = $this->createDriver();
+
+        $deliveredStatus = Status::firstOrCreate(
+            ['value' => 3],
+            ['name' => 'Delivered', 'badge_label' => 'Delivered', 'badge_class' => 'bg-success']
+        );
+
+        $waybill = Waybill::create([
+            'waybill_number' => 'WB-DELIVERED-01',
+            'vehicle_id'     => $this->vehicle->id,
+            'driver_id'      => $driver->id,
+            'status_id'      => $deliveredStatus->id,
+            'origin'         => 'Islamabad',
+            'destination'    => 'Karachi',
+            'dispatch_date'  => now()->toDateString(),
+        ]);
+
+        WaybillDriverPlan::create([
+            'waybill_id'            => $waybill->id,
+            'driver_id'             => $driver->id,
+            'sequence'              => 1,
+            'planned_seconds'       => 14400,
+            'actual_driven_seconds' => 7200,
+            'status'                => 'completed',
+        ]);
+
+        $response = $this->actingAs($driver->user)->get(route('driver.portal'));
+
+        $response->assertStatus(200);
+        $response->assertSee('TRIP DELIVERED');
+        $response->assertSee('WAYBILL DELIVERED');
+        $response->assertSee('Delivered');
+        // Initial start modal should NOT be rendered when waybill is delivered
+        $response->assertDontSee('id="initialStartModal"', false);
+        // Start duty button should have d-none class when waybill is delivered
+        $response->assertSee('btn-duty-start d-none');
+    }
 }

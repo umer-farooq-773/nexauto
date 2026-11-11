@@ -134,6 +134,11 @@ class DriverPortalController extends Controller
 
         $vehicle = $waybill?->vehicle ?? $driver->vehicles->first();
 
+        // Check if waybill or plan is completed/delivered
+        $statusValue = $waybill?->status?->value !== null ? (int) $waybill->status->value : null;
+        $isDelivered = $statusValue === 3;
+        $isWaybillCompleted = in_array($statusValue, [3, 4, 6], true) || $planStatus === 'completed';
+
         // Calculate initial remaining seconds
         $remainingSeconds = max(0, $plannedSeconds - $actualDrivenSeconds);
         $isOvertime = $actualDrivenSeconds > $plannedSeconds;
@@ -168,6 +173,8 @@ class DriverPortalController extends Controller
             'initials',
             'isOvertime',
             'overtimeSeconds',
+            'isDelivered',
+            'isWaybillCompleted',
             'eldLogs',
             'wialonHost',
             'wialonToken',
@@ -790,6 +797,161 @@ class DriverPortalController extends Controller
         }
 
         return 0;
+    }
+
+    /**
+     * Driver History Page — shows all past trips, vehicles driven, and ELD activity
+     */
+    public function history(Request $request)
+    {
+        $user = auth()->user();
+        $driver = $user->driverDetail;
+
+        if (!$driver) {
+            if ($user->hasAnyRole([Constants::SUPERADMIN, Constants::ADMIN, Constants::CHAMPS_MANAGEMENT])) {
+                $driver = DriverDetail::where('status', 1)->first() ?? DriverDetail::first();
+            }
+        }
+
+        if (!$driver) {
+            return redirect()->route('driver.portal');
+        }
+
+        // All vehicles this driver has ever driven (from ELD logs + driver plans)
+        $vehicleIds = DriverEldLog::where('driver_id', $driver->id)
+            ->whereNotNull('vehicle_id')
+            ->distinct()
+            ->pluck('vehicle_id')
+            ->merge(
+                WaybillDriverPlan::where('driver_id', $driver->id)
+                    ->whereHas('waybill', fn($q) => $q->whereNotNull('vehicle_id'))
+                    ->with('waybill:id,vehicle_id')
+                    ->get()
+                    ->pluck('waybill.vehicle_id')
+                    ->filter()
+            )
+            ->unique()
+            ->values();
+
+        $vehicles = Vehicle::whereIn('id', $vehicleIds)->get(['id', 'fleet_no', 'truck_no']);
+
+        // All waybill trips for this driver
+        $tripsQuery = WaybillDriverPlan::where('driver_id', $driver->id)
+            ->with(['waybill.vehicle', 'waybill.status']);
+
+        // Apply filters
+        if ($request->filled('vehicle_id')) {
+            $tripsQuery->whereHas('waybill', fn($q) => $q->where('vehicle_id', $request->input('vehicle_id')));
+        }
+        if ($request->filled('status')) {
+            $tripsQuery->where('status', $request->input('status'));
+        }
+        if ($request->filled('date_from')) {
+            $tripsQuery->where('created_at', '>=', Carbon::parse($request->input('date_from'))->startOfDay());
+        }
+        if ($request->filled('date_to')) {
+            $tripsQuery->where('created_at', '<=', Carbon::parse($request->input('date_to'))->endOfDay());
+        }
+
+        $trips = $tripsQuery->latest('created_at')->paginate(15);
+
+        // Summary statistics
+        $totalTrips = WaybillDriverPlan::where('driver_id', $driver->id)->count();
+        $completedTrips = WaybillDriverPlan::where('driver_id', $driver->id)->where('status', 'completed')->count();
+        $totalDrivingSeconds = (int) WaybillDriverPlan::where('driver_id', $driver->id)->sum('actual_driven_seconds');
+        $totalVehicles = $vehicleIds->count();
+        $overtimeCount = DriverEldLog::where('driver_id', $driver->id)->where('event_type', 'overtime_violation')->count();
+
+        // Driver initials for avatar
+        $fullName = trim($driver->full_name ?? '');
+        $nameParts = preg_split('/\s+/', $fullName);
+        if (count($nameParts) >= 2 && !empty($nameParts[1])) {
+            $initials = strtoupper(substr($nameParts[0], 0, 1) . substr($nameParts[1], 0, 1));
+        } else {
+            $cleanName = preg_replace('/[^a-zA-Z0-9]/', '', $fullName);
+            $initials = strtoupper(substr($cleanName ?: 'DR', 0, 2));
+        }
+
+        return view('driver.history', compact(
+            'driver',
+            'vehicles',
+            'trips',
+            'totalTrips',
+            'completedTrips',
+            'totalDrivingSeconds',
+            'totalVehicles',
+            'overtimeCount',
+            'initials'
+        ));
+    }
+
+    /**
+     * AJAX endpoint for driver history activity log
+     */
+    public function historyLogs(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        $driver = $user->driverDetail;
+
+        if (!$driver) {
+            if ($user->hasAnyRole([Constants::SUPERADMIN, Constants::ADMIN, Constants::CHAMPS_MANAGEMENT])) {
+                $driver = DriverDetail::where('status', 1)->first() ?? DriverDetail::first();
+            }
+        }
+
+        if (!$driver) {
+            return response()->json(['success' => false, 'message' => 'No driver profile'], 404);
+        }
+
+        $query = DriverEldLog::where('driver_id', $driver->id)
+            ->with(['waybill:id,waybill_number', 'vehicle:id,fleet_no,truck_no']);
+
+        if ($request->filled('vehicle_id')) {
+            $query->where('vehicle_id', $request->input('vehicle_id'));
+        }
+        if ($request->filled('event_type')) {
+            $query->where('event_type', $request->input('event_type'));
+        }
+        if ($request->filled('waybill_id')) {
+            $query->where('waybill_id', $request->input('waybill_id'));
+        }
+        if ($request->filled('date_from')) {
+            $query->where('created_at', '>=', Carbon::parse($request->input('date_from'))->startOfDay());
+        }
+        if ($request->filled('date_to')) {
+            $query->where('created_at', '<=', Carbon::parse($request->input('date_to'))->endOfDay());
+        }
+
+        $logs = $query->latest()
+            ->paginate($request->input('per_page', 30))
+            ->through(fn ($log) => [
+                'id'          => $log->id,
+                'event_type'  => $log->event_type,
+                'event_label' => $log->event_label,
+                'badge_class' => $log->event_badge_class,
+                'status'      => $log->status,
+                'waybill_no'  => $log->waybill?->waybill_number,
+                'vehicle'     => $log->vehicle ? ($log->vehicle->fleet_no ?? $log->vehicle->truck_no) : null,
+                'latitude'    => $log->latitude,
+                'longitude'   => $log->longitude,
+                'speed_kmh'   => $log->speed_kmh,
+                'elapsed'     => $log->elapsed_seconds ? gmdate('H:i:s', $log->elapsed_seconds) : null,
+                'planned'     => $log->planned_seconds ? DriverEldLog::formatDuration($log->planned_seconds) : null,
+                'notes'       => $log->notes,
+                'time'        => $log->created_at->format('H:i:s'),
+                'date'        => $log->created_at->format('d M Y'),
+                'created_at'  => $log->created_at->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'logs'    => $logs->items(),
+            'pagination' => [
+                'current_page' => $logs->currentPage(),
+                'last_page'    => $logs->lastPage(),
+                'total'        => $logs->total(),
+            ],
+        ]);
     }
 }
 

@@ -203,6 +203,13 @@
             border: 1px solid #cbd5e1;
         }
 
+        .duty-pill.completed {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #6ee7b7;
+            box-shadow: 0 2px 6px rgba(16, 185, 129, 0.15);
+        }
+
         @keyframes riSpin {
             100% { transform: rotate(360deg); }
         }
@@ -562,7 +569,13 @@
                         <span class="badge bg-light text-dark border border-secondary border-opacity-25" style="font-size: 11px;">
                             <i class="ri-route-line text-primary me-1"></i>Waybill #<span id="waybill-number-display">{{ $waybill->waybill_number }}</span>
                         </span>
-                        <span id="waybill-status-pill" class="badge {{ match($waybill->status?->value) { 2 => 'bg-primary text-white', 3 => 'bg-success text-white', 4 => 'bg-danger text-white', 5 => 'bg-secondary text-white', default => 'bg-secondary-subtle text-secondary' } }}" style="font-size: 10px;">{{ $waybill->status_label }}</span>
+                        <span id="waybill-status-pill" class="badge {{ match($waybill->status?->value) { 2 => 'bg-primary text-white', 3 => 'bg-success text-white', 4 => 'bg-danger text-white', 5 => 'bg-secondary text-white', default => 'bg-secondary-subtle text-secondary' } }}" style="font-size: 10px;">
+                            @if($isDelivered)
+                                <i class="ri-checkbox-circle-fill me-1"></i>{{ $waybill->status_label }}
+                            @else
+                                {{ $waybill->status_label }}
+                            @endif
+                        </span>
                         <span class="text-muted d-none d-lg-inline" style="font-size: 11px;">
                             {{ Str::limit($waybill->origin, 14) }} <i class="ri-arrow-right-line text-primary"></i> {{ Str::limit($waybill->destination, 14) }}
                         </span>
@@ -574,8 +587,16 @@
                         <div id="countdown-timer-display" class="hud-digital-clock {{ $isOvertime ? 'overtime' : '' }}">
                             {{ $isOvertime ? '+' . \App\Models\DriverEldLog::formatDigitalTime($overtimeSeconds) : \App\Models\DriverEldLog::formatDigitalTime($remainingSeconds) }}
                         </div>
-                        <small id="countdown-caption" class="text-uppercase fw-bold {{ $isOvertime ? 'text-danger' : 'text-primary' }}" style="font-size: 9px; letter-spacing: 0.8px;">
-                            {{ $isOvertime ? '🚨 LIMIT EXCEEDED (OVERTIME)' : 'REMAINING TIME DOWN' }}
+                        <small id="countdown-caption" class="text-uppercase fw-bold {{ $isWaybillCompleted ? 'text-success' : ($isOvertime ? 'text-danger' : 'text-primary') }}" style="font-size: 9px; letter-spacing: 0.8px;">
+                            @if($isDelivered)
+                                ✓ WAYBILL DELIVERED
+                            @elseif($isWaybillCompleted)
+                                ✓ TRIP COMPLETED
+                            @elseif($isOvertime)
+                                🚨 LIMIT EXCEEDED (OVERTIME)
+                            @else
+                                REMAINING TIME DOWN
+                            @endif
                         </small>
                     </div>
 
@@ -594,22 +615,29 @@
             {{-- Right: Duty Status Pill, Control Actions & Navigation --}}
             <div class="d-flex align-items-center gap-2">
                 {{-- Duty Status Pill --}}
-                <div id="duty-status-badge" class="duty-pill {{ $planStatus === 'active' ? 'driving' : ($planStatus === 'paused' ? 'paused' : 'stopped') }}">
+                <div id="duty-status-badge" class="duty-pill {{ $isWaybillCompleted ? 'completed' : ($planStatus === 'active' ? 'driving' : ($planStatus === 'paused' ? 'paused' : 'stopped')) }}">
                     <span id="duty-status-text">
-                        @if($planStatus === 'active') DRIVING (ON DUTY)
-                        @elseif($planStatus === 'paused') RESTING (PAUSED)
-                        @else DUTY NOT STARTED
+                        @if($isDelivered)
+                            <i class="ri-checkbox-circle-fill text-success me-1"></i> TRIP DELIVERED
+                        @elseif($isWaybillCompleted)
+                            <i class="ri-checkbox-circle-fill text-success me-1"></i> TRIP COMPLETED
+                        @elseif($planStatus === 'active')
+                            DRIVING (ON DUTY)
+                        @elseif($planStatus === 'paused')
+                            RESTING (PAUSED)
+                        @else
+                            DUTY NOT STARTED
                         @endif
                     </span>
                 </div>
 
-                {{-- Action Buttons --}}
-                <button id="btn-start-duty" class="btn btn-duty-action btn-duty-start {{ $planStatus === 'active' ? 'd-none' : '' }}">
+                {{-- Action Buttons (HIDDEN when waybill is delivered/completed) --}}
+                <button id="btn-start-duty" class="btn btn-duty-action btn-duty-start {{ ($planStatus === 'active' || $isWaybillCompleted) ? 'd-none' : '' }}">
                     <i class="ri-play-circle-line fs-5"></i>
                     <span>START DUTY</span>
                 </button>
 
-                <button id="btn-pause-duty" class="btn btn-duty-action btn-duty-pause {{ $planStatus === 'active' ? '' : 'd-none' }}">
+                <button id="btn-pause-duty" class="btn btn-duty-action btn-duty-pause {{ ($planStatus === 'active' && !$isWaybillCompleted) ? '' : 'd-none' }}">
                     <i class="ri-pause-circle-line fs-5"></i>
                     <span>PAUSE REST</span>
                 </button>
@@ -619,9 +647,16 @@
                     <span>RESUME</span>
                 </button>
 
-                <button id="btn-end-duty" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold {{ $planStatus === 'active' ? '' : 'd-none' }}">
+                <button id="btn-end-duty" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold {{ ($planStatus === 'active' && !$isWaybillCompleted) ? '' : 'd-none' }}">
                     <i class="ri-stop-circle-line me-1"></i> End Shift
                 </button>
+
+                @if($isWaybillCompleted)
+                    <div id="delivered-status-indicator" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fw-bold d-flex align-items-center gap-1 shadow-sm" style="font-size: 11px;">
+                        <i class="ri-checkbox-circle-fill fs-6 text-success"></i>
+                        <span>{{ $isDelivered ? 'Delivered' : 'Completed' }}</span>
+                    </div>
+                @endif
 
                 {{-- Multi-Driver Leg Selector (if multi-driver) --}}
                 @if($totalDrivers > 1)
@@ -661,6 +696,12 @@
                     <span class="d-none d-sm-inline">Driver Log</span>
                     <span id="log-count-badge" class="badge bg-primary text-white ms-1" style="font-size: 9px;">{{ $eldLogs->count() }}</span>
                 </button>
+
+                {{-- Driver History --}}
+                <a href="{{ route('driver.history') }}" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm" style="font-size: 11px;" title="View Trip History & Activity Logs">
+                    <i class="ri-history-line"></i>
+                    <span class="d-none d-sm-inline">History</span>
+                </a>
 
                 {{-- PWA Install Button (Sharp SVG Download Icon) --}}
                 <button id="pwa-install-btn" class="btn btn-sm btn-success rounded-pill px-3 py-1 d-flex align-items-center gap-1 fw-bold shadow-sm" title="Install NexAuto ELD App" style="font-size: 11px;">
@@ -738,8 +779,9 @@
 
 </div>
 
+@if(!$isWaybillCompleted)
 {{-- ===================== 3. INITIAL LOGIN "START" ALERT MODAL ===================== --}}
-<div class="modal fade" id="initialStartModal" tabindex="-1" aria-labelledby="initialStartModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+<div class="modal fade" id="initialStartModal" tabindex="-1" aria-labelledby="initialStartModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content bg-white border shadow-lg rounded-4">
             <div class="modal-header border-bottom pb-2">
@@ -752,6 +794,7 @@
                         <small class="text-muted">ELD Driver Duty Activation</small>
                     </div>
                 </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body py-4">
                 <p class="text-secondary mb-3">
@@ -789,6 +832,7 @@
         </div>
     </div>
 </div>
+@endif
 
 {{-- ===================== 4. TIME LIMIT EXCEEDED VIOLATION MODAL ===================== --}}
 <div class="modal fade" id="overtimeViolationModal" tabindex="-1" aria-labelledby="overtimeViolationModalLabel" aria-hidden="true">
@@ -1033,6 +1077,8 @@
         destLng:         {{ $waybill?->destination_lng ? (float)$waybill->destination_lng : 'null' }},
         originName:      @json($waybill?->origin ?? 'Origin'),
         destName:        @json($waybill?->destination ?? 'Destination'),
+        isDelivered:        {{ $isDelivered ? 'true' : 'false' }},
+        isWaybillCompleted: {{ $isWaybillCompleted ? 'true' : 'false' }},
         checkpoints:     @json($checkpoints),
         routeGeometry:   @json($routeGeometry),
         csrfToken:       document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
@@ -1051,7 +1097,7 @@
     };
 
     let timerState = {
-        isRunning:      {{ $planStatus === 'active' ? 'true' : 'false' }},
+        isRunning:      {{ ($planStatus === 'active' && !$isWaybillCompleted) ? 'true' : 'false' }},
         elapsedSeconds: {{ (int) $actualDrivenSeconds }},
         intervalId:     null,
         isOvertime:     {{ $isOvertime ? 'true' : 'false' }},
@@ -1275,6 +1321,17 @@
         const btnPause = document.getElementById('btn-pause-duty');
         const btnResume = document.getElementById('btn-resume-duty');
         const btnEnd = document.getElementById('btn-end-duty');
+
+        if (CONFIG.isWaybillCompleted || CONFIG.isDelivered) {
+            if (badge) badge.className = 'duty-pill completed';
+            if (text) text.innerHTML = '<i class="ri-checkbox-circle-fill text-success me-1"></i> ' + (CONFIG.isDelivered ? 'TRIP DELIVERED' : 'TRIP COMPLETED');
+            if (dot) dot.className = 'avatar-status-dot offline';
+            btnStart?.classList.add('d-none');
+            btnPause?.classList.add('d-none');
+            btnResume?.classList.add('d-none');
+            btnEnd?.classList.add('d-none');
+            return;
+        }
 
         if (status === 'active') {
             if (badge) badge.className = 'duty-pill driving';
@@ -1682,6 +1739,7 @@
             const modalEl = document.getElementById('initialStartModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if (modal) modal.hide();
+            sessionStorage.setItem('startModalDismissed_' + (CONFIG.waybillId || 'general'), '1');
             doStartDuty();
         });
         document.getElementById('banner-start-timer-btn')?.addEventListener('click', () => doStartDuty());
@@ -1870,6 +1928,9 @@
 
                     // If waybill is Delivered (3) or Completed (4/6)
                     if (data.waybill.is_delivered || data.waybill.is_completed) {
+                        CONFIG.isWaybillCompleted = true;
+                        CONFIG.isDelivered = data.waybill.is_delivered;
+
                         if (timerState.isRunning) {
                             if (timerState.intervalId) clearInterval(timerState.intervalId);
                             timerState.isRunning = false;
@@ -1878,10 +1939,10 @@
                         const dutyStatusBadge = document.getElementById('duty-status-badge');
                         const dutyStatusText = document.getElementById('duty-status-text');
                         if (dutyStatusBadge) {
-                            dutyStatusBadge.className = 'duty-pill stopped';
+                            dutyStatusBadge.className = 'duty-pill completed';
                         }
                         if (dutyStatusText) {
-                            dutyStatusText.textContent = data.waybill.is_delivered ? 'DELIVERED (OFF DUTY)' : 'COMPLETED';
+                            dutyStatusText.innerHTML = '<i class="ri-checkbox-circle-fill text-success me-1"></i> ' + (data.waybill.is_delivered ? 'TRIP DELIVERED' : 'TRIP COMPLETED');
                         }
 
                         // Hide action buttons
@@ -1890,10 +1951,28 @@
                         document.getElementById('btn-resume-duty')?.classList.add('d-none');
                         document.getElementById('btn-end-duty')?.classList.add('d-none');
 
+                        // Ensure delivered indicator badge exists
+                        let indicator = document.getElementById('delivered-status-indicator');
+                        if (!indicator && dutyStatusBadge) {
+                            indicator = document.createElement('div');
+                            indicator.id = 'delivered-status-indicator';
+                            indicator.className = 'badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fw-bold d-flex align-items-center gap-1 shadow-sm';
+                            indicator.style.fontSize = '11px';
+                            indicator.innerHTML = '<i class="ri-checkbox-circle-fill fs-6 text-success"></i> <span>' + (data.waybill.is_delivered ? 'Delivered' : 'Completed') + '</span>';
+                            dutyStatusBadge.insertAdjacentElement('afterend', indicator);
+                        }
+
+                        // Close start modal if open
+                        const modalEl = document.getElementById('initialStartModal');
+                        if (modalEl) {
+                            const modal = bootstrap.Modal.getInstance(modalEl);
+                            if (modal) modal.hide();
+                        }
+
                         // Update countdown caption
                         const countdownCaption = document.getElementById('countdown-caption');
                         if (countdownCaption) {
-                            countdownCaption.textContent = data.waybill.is_delivered ? 'WAYBILL DELIVERED' : 'TRIP COMPLETED';
+                            countdownCaption.textContent = data.waybill.is_delivered ? '✓ WAYBILL DELIVERED' : '✓ TRIP COMPLETED';
                             countdownCaption.className = 'text-uppercase fw-bold text-success';
                         }
 
@@ -2017,13 +2096,24 @@
 
         if (timerState.isRunning) {
             startTimerTick();
-        } else {
-            // Auto-open modal on fresh login
-            const modalEl = document.getElementById('initialStartModal');
-            if (modalEl) {
-                const startModal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                startModal.show();
+        } else if (!CONFIG.isWaybillCompleted && !CONFIG.isDelivered) {
+            // Auto-open modal on fresh login only if not completed/delivered, and not already dismissed in this session
+            const dismissedKey = 'startModalDismissed_' + (CONFIG.waybillId || 'general');
+            if (!sessionStorage.getItem(dismissedKey)) {
+                const modalEl = document.getElementById('initialStartModal');
+                if (modalEl) {
+                    const startModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                    startModal.show();
+                }
             }
+        }
+
+        const startModalEl = document.getElementById('initialStartModal');
+        if (startModalEl) {
+            startModalEl.addEventListener('hidden.bs.modal', function () {
+                const dismissedKey = 'startModalDismissed_' + (CONFIG.waybillId || 'general');
+                sessionStorage.setItem(dismissedKey, '1');
+            });
         }
 
         // Global backdrop cleaner to prevent screen darkening on repeated modal triggers
