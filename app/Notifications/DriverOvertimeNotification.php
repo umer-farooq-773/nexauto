@@ -35,14 +35,16 @@ class DriverOvertimeNotification extends Notification
         $appName = config('app.name', 'NexAuto');
         $allocatedHours = round($this->allocatedSeconds / 3600, 2);
         $drivenHours = round($this->actualDrivenSeconds / 3600, 2);
+        $allocatedHuman = \App\Models\DriverEldLog::formatDuration($this->allocatedSeconds);
+        $drivenHuman = \App\Models\DriverEldLog::formatDuration($this->actualDrivenSeconds);
 
         return (new MailMessage)
             ->error()
             ->subject("[{$appName} ALERT] Driver Overtime Violation — {$this->driverName}")
             ->greeting("Attention Required,")
             ->line("Driver **{$this->driverName}** has exceeded their scheduled driving time limit on Waybill **#{$this->waybillNumber}** (Vehicle: **{$this->vehicleFleet}**).")
-            ->line("**Allocated Time:** {$allocatedHours} hours")
-            ->line("**Actual Driving Time:** {$drivenHours} hours")
+            ->line("**Allocated Time:** {$allocatedHuman} ({$allocatedHours} hours / " . number_format($this->allocatedSeconds) . "s)")
+            ->line("**Actual Driving Time:** {$drivenHuman} ({$drivenHours} hours / " . number_format($this->actualDrivenSeconds) . "s)")
             ->line("ELD compliance requires immediate driver rest or handover to relief driver.")
             ->action('Review Trip & Driver Log', $this->targetUrl)
             ->salutation("Fleet Safety Monitoring System");
@@ -52,15 +54,19 @@ class DriverOvertimeNotification extends Notification
     {
         $allocatedHours = round($this->allocatedSeconds / 3600, 2);
         $drivenHours = round($this->actualDrivenSeconds / 3600, 2);
+        $allocatedHuman = \App\Models\DriverEldLog::formatDuration($this->allocatedSeconds);
+        $drivenHuman = \App\Models\DriverEldLog::formatDuration($this->actualDrivenSeconds);
 
         return [
             'title'            => '🚨 Driver Overtime Violation',
-            'message'          => "Driver {$this->driverName} has exceeded allocated driving time ({$allocatedHours}h) on Waybill #{$this->waybillNumber}.",
+            'message'          => "Driver {$this->driverName} has exceeded allocated driving time ({$allocatedHuman}) on Waybill #{$this->waybillNumber}.",
             'driver_name'      => $this->driverName,
             'waybill_number'   => $this->waybillNumber,
             'vehicle_fleet'    => $this->vehicleFleet,
             'allocated_hours'  => $allocatedHours,
             'driven_hours'     => $drivenHours,
+            'allocated_human'  => $allocatedHuman,
+            'driven_human'     => $drivenHuman,
             'target_url'       => $this->targetUrl,
         ];
     }

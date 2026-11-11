@@ -7,7 +7,6 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use App\Interfaces\WaybillInterface;
 use App\Models\DriverDetail;
-use App\Models\Vehicle;
 
 class WaybillRequest extends FormRequest
 {
@@ -26,8 +25,18 @@ class WaybillRequest extends FormRequest
         }
 
         $driverRows = $this->input('drivers');
-        if (is_array($driverRows) && isset($driverRows[0]['driver_id'])) {
-            $this->merge(['driver_id' => $driverRows[0]['driver_id']]);
+        if (is_array($driverRows)) {
+            foreach ($driverRows as $i => $row) {
+                if (isset($row['duration_seconds']) && $row['duration_seconds'] !== '' && (!isset($row['duration_minutes']) || $row['duration_minutes'] === '')) {
+                    $driverRows[$i]['duration_minutes'] = max(1, (int) ceil((int) $row['duration_seconds'] / 60));
+                } elseif (isset($row['duration_minutes']) && $row['duration_minutes'] !== '' && (!isset($row['duration_seconds']) || $row['duration_seconds'] === '')) {
+                    $driverRows[$i]['duration_seconds'] = (int) $row['duration_minutes'] * 60;
+                }
+            }
+            if (isset($driverRows[0]['driver_id'])) {
+                $this->merge(['driver_id' => $driverRows[0]['driver_id']]);
+            }
+            $this->merge(['drivers' => $driverRows]);
         }
 
         $normalizeUnit = function ($unit) {
@@ -160,6 +169,7 @@ class WaybillRequest extends FormRequest
             $rules["drivers.{$index}.duration_minutes"] = $durationRequired
                 ? ['required', 'integer', 'min:1']
                 : ['nullable', 'integer', 'min:1'];
+            $rules["drivers.{$index}.duration_seconds"] = ['nullable', 'integer', 'min:1'];
         }
 
         return $rules;
@@ -196,7 +206,121 @@ class WaybillRequest extends FormRequest
             $awaiting = array_values(array_filter($conflicts, fn (array $row) => (int) $row['status_value'] === 0));
             $warnings = array_map(fn (array $row) => sprintf('%s is also listed on awaiting waybill %s.', $row['driver_name'], $row['waybill_number']), $awaiting);
             $this->attributes->set('waybill_driver_warnings', array_values(array_unique($warnings)));
+
+            // Driver allocations are independent of the Wialon trip-detection threshold.
+            // Validate only against the waybill's estimated route duration, when provided.
+            $estimatedDurationStr = $this->input('estimated_duration');
+            $maxSeconds = $this->parseDurationToSeconds($estimatedDurationStr);
+
+            $totalPlannedSeconds = 0;
+            $hasMultipleDrivers = count($drivers) > 1;
+
+            foreach ($drivers as $idx => $driverRow) {
+                $durSec = null;
+                if (isset($driverRow['duration_seconds']) && $driverRow['duration_seconds'] !== '' && $driverRow['duration_seconds'] !== null) {
+                    $durSec = (int) $driverRow['duration_seconds'];
+                } elseif (isset($driverRow['duration_minutes']) && $driverRow['duration_minutes'] !== '' && $driverRow['duration_minutes'] !== null) {
+                    $durSec = (int) $driverRow['duration_minutes'] * 60;
+                }
+
+                if ($durSec === null) {
+                    continue;
+                }
+
+                $totalPlannedSeconds += $durSec;
+
+                // Validate maximum trip duration if route duration is defined
+                if ($maxSeconds !== null && $maxSeconds > 0 && $durSec > $maxSeconds) {
+                    $durHuman = \App\Models\DriverEldLog::formatDuration($durSec);
+                    $maxHuman = \App\Models\DriverEldLog::formatDuration($maxSeconds);
+                    $msg = "Driver " . ($idx + 1) . " planned time ({$durSec}s / {$durHuman}) cannot exceed the vehicle's trip driving time of {$maxSeconds}s ({$maxHuman}).";
+                    $validator->errors()->add("drivers.{$idx}.duration_seconds", $msg);
+                    $validator->errors()->add("drivers.{$idx}.duration_minutes", $msg);
+                }
+            }
+
+            if ($maxSeconds !== null && $maxSeconds > 0 && $hasMultipleDrivers && $totalPlannedSeconds > $maxSeconds) {
+                $totalHuman = \App\Models\DriverEldLog::formatDuration($totalPlannedSeconds);
+                $maxHuman = \App\Models\DriverEldLog::formatDuration($maxSeconds);
+                $validator->errors()->add(
+                    'drivers',
+                    "Total planned driving time ({$totalPlannedSeconds}s / {$totalHuman}) exceeds the vehicle's trip driving time of {$maxSeconds}s ({$maxHuman})."
+                );
+            }
         });
+    }
+
+    public function parseDurationToSeconds(?string $duration): ?int
+    {
+        if (empty($duration)) {
+            return null;
+        }
+
+        if (is_numeric($duration)) {
+            $num = (int) $duration;
+            return $num > 1000 ? $num : $num * 60;
+        }
+
+        $str = strtolower(trim($duration));
+        $totalSeconds = 0;
+
+        if (preg_match('/(\d+)\s*(?:hours|hour|hrs|hr|h)/i', $str, $matches)) {
+            $totalSeconds += (int) $matches[1] * 3600;
+        }
+
+        if (preg_match('/(\d+)\s*(?:minutes|minute|mins|min|m)/i', $str, $matches)) {
+            $totalSeconds += (int) $matches[1] * 60;
+        }
+
+        if (preg_match('/(\d+)\s*(?:seconds|second|secs|sec|s)/i', $str, $matches)) {
+            $totalSeconds += (int) $matches[1];
+        }
+
+        if ($totalSeconds > 0) {
+            return $totalSeconds;
+        }
+
+        if (preg_match('/^(\d+):(\d+)(?::(\d+))?/', $str, $matches)) {
+            $h = (int) $matches[1];
+            $m = (int) $matches[2];
+            $s = isset($matches[3]) ? (int) $matches[3] : 0;
+            return ($h * 3600) + ($m * 60) + $s;
+        }
+
+        return null;
+    }
+
+    protected function parseDurationToMinutes(?string $duration): ?int
+    {
+        if (empty($duration)) {
+            return null;
+        }
+
+        if (is_numeric($duration)) {
+            $num = (int) $duration;
+            return $num > 500 ? (int) round($num / 60) : $num;
+        }
+
+        $str = strtolower(trim($duration));
+        $totalMinutes = 0;
+
+        if (preg_match('/(\d+)\s*(?:hours|hour|hrs|hr|h)/i', $str, $matches)) {
+            $totalMinutes += (int) $matches[1] * 60;
+        }
+
+        if (preg_match('/(\d+)\s*(?:minutes|minute|mins|min|m)/i', $str, $matches)) {
+            $totalMinutes += (int) $matches[1];
+        }
+
+        if ($totalMinutes > 0) {
+            return $totalMinutes;
+        }
+
+        if (preg_match('/^(\d+):(\d+)/', $str, $matches)) {
+            return ((int) $matches[1] * 60) + (int) $matches[2];
+        }
+
+        return null;
     }
 }
 

@@ -204,6 +204,221 @@
             .trip-card { padding: 14px; }
         }
 
+        html,
+        body {
+            max-width: 100%;
+            overflow-x: clip;
+        }
+
+        .history-header > .d-flex,
+        .history-header > .d-flex > div,
+        .trip-card,
+        .activity-log-section,
+        .filter-sidebar {
+            min-width: 0;
+        }
+
+        .history-tabs {
+            flex-wrap: nowrap;
+        }
+
+        .history-tabs .nav-link {
+            white-space: nowrap;
+        }
+
+        .trip-route-line {
+            min-width: 0;
+            flex-wrap: wrap;
+            row-gap: 6px;
+        }
+
+        .trip-route-line .text-truncate {
+            min-width: 0;
+            max-width: min(35vw, 140px) !important;
+        }
+
+        .log-timeline-item > .d-flex.justify-content-between {
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .log-timeline-item > .d-flex.justify-content-between > :first-child {
+            min-width: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .log-timeline-item > .d-flex.justify-content-between > :last-child {
+            flex: 0 0 auto;
+            text-align: left !important;
+        }
+
+        @media (max-width: 767.98px) {
+            .history-header {
+                padding: 10px 12px;
+            }
+
+            .history-header > .d-flex {
+                align-items: stretch !important;
+                gap: 10px !important;
+            }
+
+            .history-header > .d-flex > div:first-child {
+                gap: 10px !important;
+            }
+
+            .history-header .driver-initials-badge {
+                width: 36px;
+                height: 36px;
+                font-size: 14px;
+            }
+
+            .history-tabs {
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px;
+            }
+
+            .history-tabs .nav-item,
+            .history-tabs .nav-link {
+                width: 100%;
+            }
+
+            .history-tabs .nav-link {
+                padding: 9px 8px;
+                font-size: 12px;
+            }
+
+            .container-fluid {
+                --bs-gutter-x: 1rem;
+            }
+
+            .filter-sidebar {
+                padding: 14px;
+            }
+
+            .filter-sidebar form {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+
+            .filter-sidebar form > .mb-3 {
+                min-width: 0;
+                margin-bottom: 0 !important;
+            }
+
+            .filter-sidebar form .form-control,
+            .filter-sidebar form .form-select {
+                min-width: 0;
+                min-height: 42px;
+                padding: 8px;
+                font-size: 12px;
+            }
+
+            .filter-sidebar form > .d-grid {
+                grid-column: 1 / -1;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px !important;
+            }
+
+            .filter-sidebar form .btn {
+                min-height: 40px;
+                padding: 8px 6px;
+                font-size: 12px;
+            }
+
+            #activityPane .filter-sidebar {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+
+            #activityPane .filter-sidebar > h6,
+            #activityPane .filter-sidebar > .d-grid {
+                grid-column: 1 / -1;
+            }
+
+            #activityPane .filter-sidebar > .d-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #activityPane .filter-sidebar > .mb-3 {
+                min-width: 0;
+                margin-bottom: 0 !important;
+            }
+
+            #activityPane .filter-sidebar .form-control,
+            #activityPane .filter-sidebar .form-select {
+                min-width: 0;
+            }
+
+            .trip-card .row > * {
+                min-width: 0;
+            }
+
+            .activity-log-section {
+                padding: 14px;
+            }
+
+            .activity-log-section > .d-flex {
+                align-items: flex-start !important;
+                gap: 8px;
+            }
+
+            .activity-log-section h6 {
+                min-width: 0;
+                line-height: 1.5;
+            }
+
+            .activity-log-section #btn-load-logs {
+                flex: 0 0 auto;
+            }
+
+            .pagination {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 4px 0;
+            }
+
+            .pagination .page-link {
+                padding: 7px 10px;
+            }
+        }
+
+        @media (max-width: 359.98px) {
+            .container-fluid {
+                --bs-gutter-x: 0.75rem;
+            }
+
+            .history-header {
+                padding-right: 8px;
+                padding-left: 8px;
+            }
+
+            .history-tabs .nav-link {
+                font-size: 11px;
+            }
+
+            .stat-card {
+                padding: 12px 8px;
+            }
+
+            .stat-label {
+                font-size: 10px;
+            }
+
+            .filter-sidebar {
+                padding: 12px;
+            }
+
+            .trip-card {
+                padding: 12px;
+            }
+        }
+
         /* ── Pagination ── */
         .pagination .page-link {
             border-radius: 10px; margin: 0 2px;
@@ -741,4 +956,3 @@
 </script>
 </body>
 </html>
-

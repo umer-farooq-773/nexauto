@@ -5,17 +5,19 @@
             if ($result?->driverPlans?->isNotEmpty()) {
                 $initialDriverRows = $result->driverPlans->map(fn ($plan) => [
                     'driver_id' => $plan->driver_id,
+                    'duration_seconds' => $plan->planned_seconds !== null ? (int) $plan->planned_seconds : '',
                     'duration_minutes' => $plan->planned_seconds !== null ? max(1, (int) ceil($plan->planned_seconds / 60)) : '',
                 ])->all();
             } else {
                 $initialDriverRows = [[
                     'driver_id' => old('driver_id', $result?->driver_id),
+                    'duration_seconds' => '',
                     'duration_minutes' => '',
                 ]];
             }
         }
         $initialDriverRows = array_values($initialDriverRows);
-        if ($initialDriverRows === []) $initialDriverRows = [['driver_id' => old('driver_id', $result?->driver_id), 'duration_minutes' => '']];
+        if ($initialDriverRows === []) $initialDriverRows = [['driver_id' => old('driver_id', $result?->driver_id), 'duration_seconds' => '', 'duration_minutes' => '']];
         $firstDriverId = $initialDriverRows[0]['driver_id'] ?? old('driver_id', $result?->driver_id);
     @endphp
     @if ($isEdit)
@@ -76,12 +78,104 @@
                             @foreach ($vehicles as $vehicle)
                                 <option value="{{ $vehicle->id }}"
                                     data-has-gps="{{ !empty($vehicle->gps_unit_id) ? '1' : '0' }}"
-                                    data-min-trip-seconds="{{ $vehicle->min_trip_seconds ?? '' }}"
+                                    data-fleet-no="{{ $vehicle->fleet_no }}"
+                                    data-truck-no="{{ $vehicle->truck_no }}"
+                                    data-edit-url="{{ route('vehicle.edit', $vehicle->id) }}"
+                                    data-min-trip-seconds="{{ $vehicle->min_trip_seconds ?? 60 }}"
+                                    data-min-parking-seconds="{{ $vehicle->min_parking_seconds ?? 300 }}"
+                                    data-min-moving-speed="{{ $vehicle->min_moving_speed_kmh ?? 1 }}"
+                                    data-speed-limit="{{ $vehicle->speed_limit_kmh ?? 80 }}"
                                     {{ ($result?->vehicle_id ?? old('vehicle_id')) == $vehicle->id ? 'selected' : '' }}>
                                     {{ $vehicle->fleet_no }} ({{ $vehicle->truck_no }})
                                 </option>
                             @endforeach
                         </select>
+                    </div>
+
+                    @php
+                        $selectedVehicleId = $result?->vehicle_id ?? old('vehicle_id');
+                        $selectedVehicle = $vehicles->firstWhere('id', $selectedVehicleId);
+                        $hasSelectedVehicle = (bool) $selectedVehicle;
+                        $selMinTripSec = (int) ($selectedVehicle->min_trip_seconds ?? 60);
+                        $selMinParkSec = (int) ($selectedVehicle->min_parking_seconds ?? 300);
+                        $selMinSpeed = $selectedVehicle->min_moving_speed_kmh ?? 1;
+                        $selSpeedLimit = $selectedVehicle->speed_limit_kmh ?? 80;
+                        $selFleetNo = $selectedVehicle ? $selectedVehicle->fleet_no : '—';
+                        $selTruckNo = $selectedVehicle ? "({$selectedVehicle->truck_no})" : '';
+                        $selEditUrl = $selectedVehicle ? route('vehicle.edit', $selectedVehicle->id) : '#';
+                        $estDurationVal = $result?->estimated_duration ?? old('estimated_duration');
+                    @endphp
+                    {{-- Selected Vehicle Specifications Table Card on the Right --}}
+                    <div class="col-md-6">
+                        <div id="vehicle-time-limits-card" class="card border rounded-3 h-100 shadow-sm bg-white overflow-hidden">
+                            <div class="card-header bg-light-subtle py-2 px-3 border-bottom d-flex align-items-center justify-content-between">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="ri-car-line text-primary"></i>
+                                    <span class="fw-bold text-dark" style="font-size: 13px;">{{ __('Vehicle Specifications & Limits') }}</span>
+                                </div>
+                                <a id="vehicle-table-edit-btn" href="{{ $selEditUrl }}" target="_blank" class="btn btn-xs btn-outline-primary py-0 px-2 rounded-pill {{ $hasSelectedVehicle ? '' : 'd-none' }}" style="font-size: 11px;" title="{{ __('Open vehicle settings in new tab') }}">
+                                    <i class="ri-edit-line me-1"></i>{{ __('Edit Asset') }}
+                                </a>
+                            </div>
+                            <div class="card-body p-0 d-flex flex-column justify-content-center">
+                                <div id="vehicle-limits-placeholder" class="text-center p-3 text-muted small {{ $hasSelectedVehicle ? 'd-none' : '' }}">
+                                    <i class="ri-information-line fs-4 text-secondary d-block mb-1"></i>
+                                    <span>{{ __('Select a vehicle on the left to view its movement detection parameters, speed limits, and edit link in this table.') }}</span>
+                                </div>
+                                <div id="vehicle-limits-table-wrapper" class="table-responsive {{ $hasSelectedVehicle ? '' : 'd-none' }}">
+                                    <table class="table table-sm table-striped table-bordered align-middle mb-0" style="font-size: 12px;">
+                                        <tbody>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5" style="width: 40%;">{{ __('Vehicle / Fleet No') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <a id="vehicle-table-link" href="{{ $selEditUrl }}" target="_blank" class="fw-bold text-primary text-decoration-underline" title="{{ __('Click to edit this vehicle in new tab') }}">
+                                                        <span id="vehicle-table-fleet-no">{{ $selFleetNo }}</span>
+                                                        <i class="ri-external-link-line ms-1" style="font-size: 11px;"></i>
+                                                    </a>
+                                                    <span id="vehicle-table-truck-no" class="text-muted ms-1 small">{{ $selTruckNo }}</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5">{{ __('Trip Detection Min. Time') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-bold" id="v-limit-trip-time">{{ $selMinTripSec }}s</span>
+                                                    <span class="text-muted ms-1 small" id="v-limit-trip-time-human">({{ ceil($selMinTripSec / 60) }} min)</span>
+                                                    <div class="small text-muted mt-1">{{ __('Wialon trip grouping only; it does not set a driver allocation minimum.') }}</div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5">{{ __('Min. Parking Time') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <span class="badge bg-info-subtle text-info border border-info-subtle fw-bold" id="v-limit-parking-time">{{ $selMinParkSec }}s</span>
+                                                    <span class="text-muted ms-1 small" id="v-limit-parking-time-human">({{ ceil($selMinParkSec / 60) }} min)</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5">{{ __('Min. Moving Speed') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <span class="fw-bold text-dark" id="v-limit-moving-speed">{{ $selMinSpeed }} km/h</span>
+                                                    <small class="text-muted ms-1">({{ __('Movement trigger') }})</small>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5">{{ __('Speed Limit') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <span class="badge bg-warning-subtle text-warning border border-warning-subtle fw-bold" id="v-limit-speed-limit">{{ $selSpeedLimit }} km/h</span>
+                                                    <small class="text-muted ms-1">({{ __('Threshold') }})</small>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th class="bg-light text-muted fw-semibold ps-3 py-1.5">{{ __('Vehicle Trip Driving Time') }}</th>
+                                                <td class="ps-3 py-1.5">
+                                                    <span class="fw-bold text-dark" id="v-limit-trip-time-val">{{ $estDurationVal ?: '—' }}</span>
+                                                    <small class="text-muted ms-1" id="v-limit-trip-time-sec"></small>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="col-12 modern-field">
@@ -91,9 +185,30 @@
                                 <i class="ri-user-add-line me-1"></i>{{ __('Add Driver') }}
                             </button>
                         </div>
-                        <p class="small text-muted mb-3">{{ __('One driver: time is optional. Several drivers: set minutes for each, the last driver can stay empty (until the trip ends).') }}</p>
+                        <p class="small text-muted mb-3">{{ __('Enter each driver’s planned share in seconds (for example, 1,000). With multiple drivers, enter a time for each driver except the final driver, whose time may be left blank. The combined total cannot exceed the estimated route time. Wialon trip-detection time does not set a minimum allocation.') }}</p>
                         <div id="waybill-driver-rows" class="d-flex flex-column gap-2">
                             @foreach ($initialDriverRows as $index => $driverRow)
+                                @php
+                                    $durSecVal = !empty($driverRow['duration_seconds'])
+                                        ? (int) $driverRow['duration_seconds']
+                                        : (!empty($driverRow['duration_minutes']) ? (int) $driverRow['duration_minutes'] * 60 : null);
+                                    $durHuman = '';
+                                    if ($durSecVal) {
+                                        if ($durSecVal < 60) {
+                                            $durHuman = $durSecVal . ' sec';
+                                        } elseif ($durSecVal < 3600) {
+                                            $dm = floor($durSecVal / 60);
+                                            $ds = $durSecVal % 60;
+                                            $durHuman = $dm . ' min' . ($dm > 1 ? 's' : '') . ($ds > 0 ? ' ' . $ds . 's' : '');
+                                        } else {
+                                            $dh = floor($durSecVal / 3600);
+                                            $remSec = $durSecVal % 3600;
+                                            $dm = floor($remSec / 60);
+                                            $ds = $remSec % 60;
+                                            $durHuman = $dh . ' hr' . ($dh > 1 ? 's' : '') . ($dm > 0 ? ' ' . $dm . ' min' . ($dm > 1 ? 's' : '') : '') . ($ds > 0 ? ' ' . $ds . 's' : '');
+                                        }
+                                    }
+                                @endphp
                                 <div class="waybill-driver-row border rounded-3 p-3 bg-light-subtle" data-index="{{ $index }}">
                                     <div class="row g-2 align-items-end">
                                         <div class="col-auto"><span class="badge bg-primary rounded-pill driver-sequence">{{ $index + 1 }}</span></div>
@@ -106,9 +221,21 @@
                                                 @endforeach
                                             </select>
                                         </div>
-                                        <div class="col-md-3 modern-field">
-                                            <label>{{ __('Planned time (minutes)') }}</label>
-                                            <input type="number" class="form-control driver-duration" name="drivers[{{ $index }}][duration_minutes]" min="1" step="1" value="{{ $driverRow['duration_minutes'] ?? '' }}" placeholder="{{ __('Optional') }}">
+                                        <div class="col-md-4 modern-field">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="mb-0">{{ __('Planned driving time (seconds)') }}</label>
+                                                <span class="driver-duration-human-badge badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5" style="font-size: 10px; {{ $durSecVal ? '' : 'display: none;' }}">{{ $durHuman }}</span>
+                                            </div>
+                                            <input type="number" class="form-control driver-duration @error('drivers.'.$index.'.duration_seconds') is-invalid @enderror @error('drivers.'.$index.'.duration_minutes') is-invalid @enderror" name="drivers[{{ $index }}][duration_seconds]" min="1" step="1" value="{{ $durSecVal ?? '' }}" placeholder="{{ __('Seconds, e.g. 1000') }}">
+                                            <input type="hidden" class="driver-duration-minutes-sync" name="drivers[{{ $index }}][duration_minutes]" value="{{ !empty($durSecVal) ? max(1, (int) ceil($durSecVal / 60)) : '' }}">
+                                            <div class="driver-duration-feedback small mt-1" style="font-size: 11px;">
+                                                @error('drivers.'.$index.'.duration_seconds')
+                                                    <span class="text-danger fw-bold"><i class="ri-error-warning-line me-1"></i>{{ $message }}</span>
+                                                @enderror
+                                                @error('drivers.'.$index.'.duration_minutes')
+                                                    <span class="text-danger fw-bold"><i class="ri-error-warning-line me-1"></i>{{ $message }}</span>
+                                                @enderror
+                                            </div>
                                         </div>
                                         <div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm btn-remove-driver" title="{{ __('Remove driver') }}"><i class="ri-delete-bin-line"></i></button></div>
                                     </div>
@@ -1172,21 +1299,173 @@
 
             renderCheckpointsUI();
 
-            // Ordered waybill driver plan repeater.
+            // Ordered waybill driver plan repeater & time validation in seconds.
+            function formatSecondsToHuman(sec) {
+                if (!sec || sec <= 0) return '';
+                sec = Math.round(sec);
+                if (sec < 60) {
+                    return sec + 's';
+                }
+                var m = Math.floor(sec / 60);
+                var s = sec % 60;
+                if (m < 60) {
+                    var str = m + ' min' + (m > 1 ? 's' : '');
+                    if (s > 0) str += ' ' + s + 's';
+                    return str;
+                }
+                var h = Math.floor(m / 60);
+                var remM = m % 60;
+                var str = h + ' hr' + (h > 1 ? 's' : '');
+                if (remM > 0) str += ' ' + remM + ' min' + (remM > 1 ? 's' : '');
+                if (s > 0) str += ' ' + s + 's';
+                return str;
+            }
+
+            function parseDurationStringToSeconds(duration) {
+                if (!duration) return 0;
+                if (typeof duration === 'number') return duration;
+                var str = String(duration).toLowerCase().trim();
+                if (!isNaN(str) && Number(str) > 0) {
+                    var num = Number(str);
+                    return num > 1000 ? num : num * 60;
+                }
+                var totalSeconds = 0;
+                var hMatch = str.match(/(\d+)\s*(?:hours|hour|hrs|hr|h)/i);
+                if (hMatch) totalSeconds += parseInt(hMatch[1], 10) * 3600;
+                var mMatch = str.match(/(\d+)\s*(?:minutes|minute|mins|min|m)/i);
+                if (mMatch) totalSeconds += parseInt(mMatch[1], 10) * 60;
+                var sMatch = str.match(/(\d+)\s*(?:seconds|second|secs|sec|s)/i);
+                if (sMatch) totalSeconds += parseInt(sMatch[1], 10);
+                if (totalSeconds > 0) return totalSeconds;
+                var colonMatch = str.match(/^(\d+):(\d+)(?::(\d+))?/);
+                if (colonMatch) {
+                    var h = parseInt(colonMatch[1], 10);
+                    var m = parseInt(colonMatch[2], 10);
+                    var s = colonMatch[3] ? parseInt(colonMatch[3], 10) : 0;
+                    return (h * 3600) + (m * 60) + s;
+                }
+                return 0;
+            }
+
+            function updateVehicleTimeLimitsCard() {
+                var $opt = $('#vehicle_id option:selected');
+                var vehicleId = $opt.val();
+                if (!vehicleId) {
+                    $('#vehicle-limits-placeholder').removeClass('d-none');
+                    $('#vehicle-limits-table-wrapper').addClass('d-none');
+                    $('#vehicle-table-edit-btn').addClass('d-none').attr('href', '#');
+                    return;
+                }
+
+                var fleetNo = $opt.attr('data-fleet-no') || $opt.data('fleet-no') || $opt.text().split('(')[0].trim();
+                var truckNo = $opt.attr('data-truck-no') || $opt.data('truck-no') || '';
+                var editUrl = $opt.attr('data-edit-url') || ("{{ route('vehicle.edit', ['vehicle' => ':id']) }}".replace(':id', vehicleId));
+                var minTripSec = parseInt($opt.attr('data-min-trip-seconds') || $opt.data('min-trip-seconds'), 10) || 60;
+                var minParkSec = parseInt($opt.attr('data-min-parking-seconds') || $opt.data('min-parking-seconds'), 10) || 300;
+                var minSpeed = $opt.attr('data-min-moving-speed') || $opt.data('min-moving-speed') || 1;
+                var speedLimit = $opt.attr('data-speed-limit') || $opt.data('speed-limit') || 80;
+
+                $('#vehicle-table-link').attr('href', editUrl);
+                $('#vehicle-table-fleet-no').text(fleetNo);
+                $('#vehicle-table-truck-no').text(truckNo ? '(' + truckNo + ')' : '');
+                $('#vehicle-table-edit-btn').attr('href', editUrl).removeClass('d-none');
+
+                $('#v-limit-trip-time').text(minTripSec + 's');
+                $('#v-limit-trip-time-human').text('(' + formatSecondsToHuman(minTripSec) + ')');
+                $('#v-limit-parking-time').text(minParkSec + 's');
+                $('#v-limit-parking-time-human').text('(' + formatSecondsToHuman(minParkSec) + ')');
+                $('#v-limit-moving-speed').text(minSpeed + ' km/h');
+                $('#v-limit-speed-limit').text(speedLimit + ' km/h');
+
+                var estDuration = $('#estimated_duration').val();
+                var estSeconds = parseDurationStringToSeconds(estDuration);
+                if (estSeconds > 0) {
+                    $('#v-limit-trip-time-val').text(estDuration);
+                    $('#v-limit-trip-time-sec').text('(' + estSeconds.toLocaleString() + 's · ' + formatSecondsToHuman(estSeconds) + ')');
+                } else {
+                    $('#v-limit-trip-time-val').text('— (Route not set)');
+                    $('#v-limit-trip-time-sec').text('');
+                }
+
+                $('#vehicle-limits-placeholder').addClass('d-none');
+                $('#vehicle-limits-table-wrapper').removeClass('d-none');
+            }
+
             function updateDriverTimeLimit() {
-                var $durations = $('#waybill-driver-rows .driver-duration');
-                var totalMinutes = 0;
-                $durations.each(function() {
-                    var value = Number($(this).val());
-                    if (Number.isFinite(value) && value > 0) totalMinutes += value;
-                    this.setCustomValidity('');
+                var $opt = $('#vehicle_id option:selected');
+                var maxTripSeconds = parseDurationStringToSeconds($('#estimated_duration').val());
+
+                var $rows = $('#waybill-driver-rows .waybill-driver-row');
+                var totalSeconds = 0;
+
+                $rows.each(function(index) {
+                    var $row = $(this);
+                    var $input = $row.find('.driver-duration');
+                    var $syncMinutes = $row.find('.driver-duration-minutes-sync');
+                    var $badge = $row.find('.driver-duration-human-badge');
+                    var $feedback = $row.find('.driver-duration-feedback');
+                    var val = Number($input.val());
+
+                    if (Number.isFinite(val) && val > 0) {
+                        totalSeconds += val;
+                        var humanText = formatSecondsToHuman(val);
+                        $badge.text(humanText).show();
+
+                        // Keep hidden minutes synced
+                        $syncMinutes.val(Math.max(1, Math.ceil(val / 60)));
+
+                        // Driver allocations are independent of Wialon's trip-detection threshold.
+                        // Only compare an allocation to the entered route duration, when available.
+                        if (maxTripSeconds > 0 && val > maxTripSeconds) {
+                            $feedback.html('<span class="text-danger fw-bold"><i class="ri-error-warning-line me-1"></i>This driver’s allocation is ' + (val - maxTripSeconds).toLocaleString() + 's longer than the entire route estimate (' + maxTripSeconds.toLocaleString() + 's).</span>');
+                            $input.addClass('is-invalid');
+                            if ($input[0]) $input[0].setCustomValidity('This driver’s allocation cannot exceed the estimated route time of ' + maxTripSeconds + ' seconds.');
+                        }
+                        // 3. Exceeds standard single shift limit (24 hours / 86400s) when route not set yet
+                        else if (maxTripSeconds === 0 && val > 86400) {
+                            $feedback.html('<span class="text-warning fw-bold"><i class="ri-error-warning-line me-1"></i>Exceeds 24 hours (' + val.toLocaleString() + 's / ' + humanText + ')! Check driving shift time.</span>');
+                            $input.addClass('is-invalid');
+                            if ($input[0]) $input[0].setCustomValidity('Planned time cannot exceed 24 hours (86,400 seconds).');
+                        }
+                        // 4. Valid
+                        else {
+                            $feedback.html('<span class="text-success fw-medium"><i class="ri-check-line me-1"></i>' + val.toLocaleString() + ' seconds assigned (' + humanText + ').</span>');
+                            $input.removeClass('is-invalid');
+                            if ($input[0]) $input[0].setCustomValidity('');
+                        }
+                    } else {
+                        $badge.hide();
+                        if ($rows.length > 1 && index < $rows.length - 1) {
+                            $feedback.html('<span class="text-muted">Enter planned seconds for this driver.</span>');
+                        } else if ($rows.length > 1) {
+                            $feedback.html('<span class="text-muted">Optional for the final driver.</span>');
+                        } else {
+                            $feedback.html('<span class="text-muted">Optional for one driver.</span>');
+                        }
+                        $input.removeClass('is-invalid');
+                        $syncMinutes.val('');
+                        if ($input[0]) $input[0].setCustomValidity('');
+                    }
                 });
 
-                var $feedback = $('#driver-time-limit-feedback');
-                if (totalMinutes > 0) {
-                    $feedback.text('Total planned driving time: ' + totalMinutes + ' min').removeClass('text-danger').addClass('text-muted');
+                // Also update vehicle table's trip driving time
+                var estDuration = $('#estimated_duration').val();
+                if (maxTripSeconds > 0) {
+                    $('#v-limit-trip-time-val').text(estDuration);
+                    $('#v-limit-trip-time-sec').text('(' + maxTripSeconds.toLocaleString() + 's · ' + formatSecondsToHuman(maxTripSeconds) + ')');
+                }
+
+                var $feedbackTotal = $('#driver-time-limit-feedback');
+                if (totalSeconds > 0) {
+                    if (maxTripSeconds > 0 && totalSeconds > maxTripSeconds) {
+                        $feedbackTotal.html('<div class="alert alert-danger py-2 px-3 mb-0 d-flex align-items-start gap-2" role="alert"><i class="ri-error-warning-line fs-5"></i><span><strong>Driver allocations exceed the route estimate by ' + (totalSeconds - maxTripSeconds).toLocaleString() + ' seconds.</strong><br>Assigned: ' + totalSeconds.toLocaleString() + ' seconds (' + formatSecondsToHuman(totalSeconds) + '). Route estimate: ' + maxTripSeconds.toLocaleString() + ' seconds (' + formatSecondsToHuman(maxTripSeconds) + '). Reduce the planned times by at least ' + (totalSeconds - maxTripSeconds).toLocaleString() + ' seconds.</span></div>');
+                    } else if (maxTripSeconds > 0) {
+                        $feedbackTotal.html('<div class="text-muted d-flex align-items-start gap-2" role="status"><i class="ri-checkbox-circle-line text-success fs-5"></i><span><strong>Driver allocations fit within the route estimate.</strong><br>Assigned: ' + totalSeconds.toLocaleString() + ' seconds (' + formatSecondsToHuman(totalSeconds) + '). Route estimate: ' + maxTripSeconds.toLocaleString() + ' seconds (' + formatSecondsToHuman(maxTripSeconds) + '). Unallocated: ' + (maxTripSeconds - totalSeconds).toLocaleString() + ' seconds (' + formatSecondsToHuman(maxTripSeconds - totalSeconds) + ').</span></div>');
+                    } else {
+                        $feedbackTotal.html('<div class="text-muted d-flex align-items-start gap-2" role="status"><i class="ri-timer-line text-primary fs-5"></i><span><strong>Total assigned: ' + totalSeconds.toLocaleString() + ' seconds (' + formatSecondsToHuman(totalSeconds) + ').</strong><br>Add the route to compare this total with its estimated driving time.</span></div>');
+                    }
                 } else {
-                    $feedback.text('').removeClass('text-danger text-muted');
+                    $feedbackTotal.empty();
                 }
             }
 
@@ -1197,8 +1476,9 @@
                     $row.attr('data-index', index);
                     $row.find('.driver-sequence').text(index + 1);
                     $row.find('.waybill-driver-select').attr('name', 'drivers[' + index + '][driver_id]');
-                    $row.find('.driver-duration').attr('name', 'drivers[' + index + '][duration_minutes]')
+                    $row.find('.driver-duration').attr('name', 'drivers[' + index + '][duration_seconds]')
                         .prop('required', $rows.length > 1 && index < $rows.length - 1);
+                    $row.find('.driver-duration-minutes-sync').attr('name', 'drivers[' + index + '][duration_minutes]');
                     $row.find('.btn-remove-driver').toggle($rows.length > 1);
                     initDriverSelect($row.find('.waybill-driver-select'));
                 });
@@ -1225,7 +1505,7 @@
             }
 
             function addDriverRow(driverId) {
-                var $row = $('<div class="waybill-driver-row border rounded-3 p-3 bg-light-subtle"><div class="row g-2 align-items-end"><div class="col-auto"><span class="badge bg-primary rounded-pill driver-sequence"></span></div><div class="col-md modern-field"><label>{{ __('Driver') }}</label><select class="form-select waybill-driver-select" required><option value="">-- Select Driver --</option></select></div><div class="col-md-3 modern-field"><label>{{ __('Planned time (minutes)') }}</label><input type="number" class="form-control driver-duration" min="1" step="1" placeholder="{{ __('Optional') }}"></div><div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm btn-remove-driver" title="{{ __('Remove driver') }}"><i class="ri-delete-bin-line"></i></button></div></div></div>');
+                var $row = $('<div class="waybill-driver-row border rounded-3 p-3 bg-light-subtle"><div class="row g-2 align-items-end"><div class="col-auto"><span class="badge bg-primary rounded-pill driver-sequence"></span></div><div class="col-md modern-field"><label>{{ __('Driver') }}</label><select class="form-select waybill-driver-select" required><option value="">-- Select Driver --</option></select></div><div class="col-md-4 modern-field"><div class="d-flex align-items-center justify-content-between mb-1"><label class="mb-0">{{ __('Planned driving time (seconds)') }}</label><span class="driver-duration-human-badge badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px; display: none;"></span></div><input type="number" class="form-control driver-duration" min="1" step="1" placeholder="{{ __('Seconds, e.g. 1000') }}"><input type="hidden" class="driver-duration-minutes-sync"><div class="driver-duration-feedback small mt-1" style="font-size: 11px;"></div></div><div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm btn-remove-driver" title="{{ __('Remove driver') }}"><i class="ri-delete-bin-line"></i></button></div></div></div>');
                 var $select = $row.find('.waybill-driver-select');
                 @foreach ($drivers as $driver)
                     $select.append($('<option>').val(@js((string) $driver->id)).text(@js($driver->full_name)));
@@ -1287,14 +1567,25 @@
                 });
             }
 
-            $('#vehicle_id').off('change.waybillDriverPlan').on('change.waybillDriverPlan', loadVehicleDriverState);
+            $('#vehicle_id').off('change.waybillDriverPlan select2:select.waybillDriverPlan select2:clear.waybillDriverPlan')
+                .on('change.waybillDriverPlan select2:select.waybillDriverPlan select2:clear.waybillDriverPlan', function() {
+                    loadVehicleDriverState();
+                    updateVehicleTimeLimitsCard();
+                    updateDriverTimeLimit();
+                });
+            $('#estimated_duration').off('input.driverLimit change.driverLimit').on('input.driverLimit change.driverLimit', function() {
+                updateDriverTimeLimit();
+                updateVehicleTimeLimitsCard();
+            });
             updateDriverRows();
+            updateVehicleTimeLimitsCard();
 
             // If there's no modal wrapper (dedicated add/edit page), it's safe
             // to load immediately. Inside a modal, this runs from the
             // shown.bs.modal handler below instead — see loadInitialFormState().
             if (!$modal.length) {
                 loadVehicleDriverState();
+                updateVehicleTimeLimitsCard();
             }
 
             // -------------------------------------------------------------
@@ -1541,6 +1832,8 @@
                         if (res.success) {
                             $('#distance').val(res.distance_km);
                             $('#estimated_duration').val(res.estimated_duration);
+                            updateDriverTimeLimit();
+                            updateVehicleTimeLimitsCard();
                             $('#route_geometry_input').val(JSON.stringify(res.route_coordinates || []));
                             $('#route-distance-badge').html('<i class="ri-route-line me-1"></i>' + res.distance_km + ' KM');
 
@@ -1925,6 +2218,8 @@
 
             function loadInitialFormState() {
                 loadVehicleDriverState();
+                updateVehicleTimeLimitsCard();
+                updateDriverTimeLimit();
                 loadInitialMapState();
             }
 
@@ -1932,7 +2227,7 @@
                 // Dedicated add/edit page (no modal wrapper) — container is
                 // already visible, so load immediately.
                 setTimeout(function() {
-                    loadInitialMapState();
+                    loadInitialFormState();
                 }, 200); // Small delay to ensure DOM is fully rendered
             } else if ($modal.hasClass('show')) {
                 // Edge case: script re-injected while the modal is already open.

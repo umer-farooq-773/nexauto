@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>NexAuto ELD — {{ $driver->full_name }} ({{ $vehicle?->fleet_no ?? 'Vehicle' }})</title>
 
     {{-- Progressive Web App (PWA) Meta & Manifest --}}
@@ -522,10 +522,254 @@
         }
 
         @media (max-width: 768px) {
-            .cockpit-header { padding: 8px 12px; }
-            .hud-digital-clock { font-size: 24px; }
-            .telematics-hud-card { display: none; }
-            .driver-initials-badge { width: 38px; height: 38px; font-size: 15px; }
+            html,
+            body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                overscroll-behavior: none;
+            }
+
+            .portal-layout {
+                width: 100%;
+                height: 100vh;
+                height: 100dvh;
+                min-height: 0;
+            }
+
+            .cockpit-header {
+                padding: 8px 12px;
+                padding-top: max(8px, env(safe-area-inset-top));
+                max-height: 48vh;
+                max-height: 48dvh;
+                flex: 0 0 auto;
+                overflow-y: auto;
+                overscroll-behavior: contain;
+            }
+
+            .cockpit-header-content {
+                display: grid !important;
+                grid-template-columns: minmax(0, 1fr);
+                gap: 8px !important;
+            }
+
+            .cockpit-identity,
+            .cockpit-summary,
+            .cockpit-actions {
+                min-width: 0;
+                width: 100%;
+            }
+
+            .cockpit-identity {
+                gap: 10px !important;
+            }
+
+            .cockpit-identity > div:last-child {
+                min-width: 0;
+            }
+
+            .cockpit-identity h6 {
+                overflow-wrap: anywhere;
+                font-size: 14px;
+            }
+
+            .cockpit-identity > div:last-child > .d-flex:last-child {
+                flex-wrap: wrap;
+                row-gap: 2px !important;
+            }
+
+            .cockpit-summary {
+                align-items: stretch !important;
+            }
+
+            .cockpit-summary > :first-child {
+                max-width: 100%;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .timer-hud-container {
+                width: 100%;
+                justify-content: center;
+                gap: 12px;
+                padding: 7px 12px;
+                border-radius: 14px;
+            }
+
+            .hud-digital-clock {
+                font-size: 26px;
+                letter-spacing: 1px;
+            }
+
+            .cockpit-actions {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: flex-start;
+                gap: 6px !important;
+            }
+
+            .cockpit-actions > * {
+                min-height: 40px;
+            }
+
+            .cockpit-actions .btn-duty-action {
+                padding: 6px 12px;
+            }
+
+            .cockpit-actions > .duty-pill {
+                justify-content: center;
+            }
+
+            .map-viewport {
+                flex: 1 1 auto;
+                min-height: 0;
+                height: auto;
+            }
+
+            .telematics-hud-card {
+                top: 8px;
+                right: 8px;
+                left: auto;
+                min-width: 0;
+                max-width: min(62vw, 230px);
+                padding: 8px 10px;
+                border-radius: 12px;
+            }
+
+            .telematics-hud-card .fs-3 {
+                font-size: 1.25rem !important;
+            }
+
+            .movement-alert-banner {
+                top: 8px;
+                left: 8px;
+                right: 8px;
+                max-width: none;
+                transform: none;
+                gap: 8px;
+                padding: 9px 10px;
+                border-radius: 12px;
+            }
+
+            .movement-alert-banner.visible {
+                display: flex !important;
+            }
+
+            .movement-alert-banner > div {
+                min-width: 0;
+                font-size: 12px;
+            }
+
+            .movement-alert-banner small {
+                display: block;
+                font-size: 10px;
+            }
+
+            .movement-alert-banner .btn {
+                flex: 0 0 auto;
+                padding: 6px 9px !important;
+                font-size: 10px;
+            }
+
+            .map-floating-overlay {
+                bottom: max(12px, env(safe-area-inset-bottom));
+                left: 8px;
+                right: 8px;
+                max-width: none;
+                justify-content: center;
+                gap: 6px;
+                transform: none;
+            }
+
+            .map-control-btn {
+                min-width: 0;
+                min-height: 44px;
+                flex: 1 1 0;
+                justify-content: center;
+                gap: 4px;
+                padding: 8px 6px;
+                font-size: 11px;
+                white-space: nowrap;
+            }
+
+            .map-control-btn i {
+                font-size: 16px !important;
+            }
+
+            .offcanvas.offcanvas-end {
+                width: min(440px, 100vw);
+                max-width: 100vw !important;
+            }
+
+            .modal-dialog {
+                margin: 12px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .cockpit-header {
+                padding-right: 8px;
+                padding-left: 8px;
+            }
+
+            .driver-initials-badge {
+                width: 36px;
+                height: 36px;
+                font-size: 14px;
+            }
+
+            .cockpit-actions {
+                justify-content: center;
+            }
+
+            .cockpit-actions .btn {
+                padding-right: 9px !important;
+                padding-left: 9px !important;
+            }
+
+            .cockpit-actions > form {
+                display: flex !important;
+                flex: 0 0 auto;
+                align-items: center;
+                margin: 0 !important;
+            }
+
+            #btn-sync-state,
+            #pwa-install-btn {
+                width: 40px;
+                justify-content: center;
+                padding-right: 0 !important;
+                padding-left: 0 !important;
+            }
+
+            #btn-sync-state > span,
+            #pwa-install-btn > span {
+                display: none;
+            }
+
+            .map-control-btn {
+                font-size: 10px;
+            }
+        }
+
+        @media (max-width: 768px) and (orientation: landscape) {
+            .cockpit-header {
+                max-height: 52vh;
+                max-height: 52dvh;
+            }
+
+            .cockpit-header-content {
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
+
+            .cockpit-summary {
+                grid-column: auto;
+                grid-row: auto;
+            }
+
+            .cockpit-actions {
+                grid-column: 1 / -1;
+            }
         }
     </style>
 </head>
@@ -538,10 +782,10 @@
 
     {{-- ===================== 1. CLEAN WHITE COCKPIT HEADER ===================== --}}
     <header class="cockpit-header">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="cockpit-header-content d-flex flex-wrap align-items-center justify-content-between gap-3">
 
             {{-- Left: Driver Identity with Two Alphabets Badge --}}
-            <div class="d-flex align-items-center gap-3">
+            <div class="cockpit-identity d-flex align-items-center gap-3">
                 <div class="driver-avatar-wrapper" title="{{ $driver->full_name }}">
                     <div class="driver-initials-badge">
                         {{ $initials }}
@@ -563,7 +807,7 @@
             </div>
 
             {{-- Center: Route Pill & Digital Countdown Timer HUD --}}
-            <div class="d-flex flex-column align-items-center text-center">
+            <div class="cockpit-summary d-flex flex-column align-items-center text-center">
                 @if($waybill)
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <span class="badge bg-light text-dark border border-secondary border-opacity-25" style="font-size: 11px;">
@@ -613,7 +857,7 @@
             </div>
 
             {{-- Right: Duty Status Pill, Control Actions & Navigation --}}
-            <div class="d-flex align-items-center gap-2">
+            <div class="cockpit-actions d-flex align-items-center gap-2">
                 {{-- Duty Status Pill --}}
                 <div id="duty-status-badge" class="duty-pill {{ $isWaybillCompleted ? 'completed' : ($planStatus === 'active' ? 'driving' : ($planStatus === 'paused' ? 'paused' : 'stopped')) }}">
                     <span id="duty-status-text">

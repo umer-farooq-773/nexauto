@@ -355,6 +355,13 @@
                                     <label for="{{ $field }}">{{ __($label) }}</label>
                                 </div>
                                 @error($field)<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                                @if(str_contains($field, 'seconds') || str_ends_with($field, '_s'))
+                                    <div class="d-flex align-items-center gap-1 mt-1 mb-1">
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1" style="font-size: 10.5px;" id="{{ $field }}_human_badge">
+                                            <i class="ri-time-line me-1"></i><span class="badge-text">—</span>
+                                        </span>
+                                    </div>
+                                @endif
                                 @if($field === 'min_moving_speed_kmh')<small class="text-muted">{{ __('Min moving speed decides when the vehicle counts as moving') }}</small>@endif
                                 @if($field === 'speed_limit_kmh')<small class="text-muted">{{ __('Speed limit decides when the driver counts as speeding') }}</small>@endif
                             </div>
@@ -909,6 +916,42 @@
             });
         }
         toggleWialonFields();
+
+        // Seconds to human-readable (mins / hrs) helper
+        function updateSecondsHelper(id) {
+            var input = document.getElementById(id);
+            var badge = document.getElementById(id + '_human_badge');
+            if (!input || !badge) return;
+            var val = parseInt(input.value, 10);
+            var textSpan = badge.querySelector('.badge-text') || badge;
+            if (isNaN(val) || val <= 0) {
+                textSpan.textContent = '0 sec';
+                return;
+            }
+            if (val < 60) {
+                textSpan.textContent = val + ' sec';
+            } else if (val < 3600) {
+                var m = Math.floor(val / 60);
+                var s = val % 60;
+                textSpan.textContent = s > 0 ? (val + 's = ' + m + ' min ' + s + ' sec') : (val + 's = ' + m + ' min' + (m > 1 ? 's' : ''));
+            } else {
+                var h = Math.floor(val / 3600);
+                var remM = Math.floor((val % 3600) / 60);
+                var remS = val % 60;
+                var res = val + 's = ' + h + ' hr' + (h > 1 ? 's' : '');
+                if (remM > 0) res += ' ' + remM + ' min' + (remM > 1 ? 's' : '');
+                if (remS > 0) res += ' ' + remS + ' sec';
+                textSpan.textContent = res;
+            }
+        }
+
+        ['min_parking_seconds', 'min_trip_seconds', 'speeding_min_duration_s'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', function() { updateSecondsHelper(id); });
+                updateSecondsHelper(id);
+            }
+        });
 
         // Phone number validation
         if (phoneNumberInput) {

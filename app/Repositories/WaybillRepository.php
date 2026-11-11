@@ -233,15 +233,26 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
         return $matches;
     }
 
+    private function extractPlannedSeconds(array $driver): ?int
+    {
+        if (isset($driver['duration_seconds']) && $driver['duration_seconds'] !== '' && $driver['duration_seconds'] !== null) {
+            return (int) $driver['duration_seconds'];
+        }
+
+        if (isset($driver['duration_minutes']) && $driver['duration_minutes'] !== '' && $driver['duration_minutes'] !== null) {
+            return (int) $driver['duration_minutes'] * 60;
+        }
+
+        return null;
+    }
+
     private function createDriverPlans(Waybill $waybill, array $drivers): void
     {
         foreach (array_values($drivers) as $index => $driver) {
             $waybill->driverPlans()->create([
                 'driver_id' => (string) $driver['driver_id'],
                 'sequence' => $index + 1,
-                'planned_seconds' => isset($driver['duration_minutes']) && $driver['duration_minutes'] !== ''
-                    ? (int) $driver['duration_minutes'] * 60
-                    : null,
+                'planned_seconds' => $this->extractPlannedSeconds($driver),
                 'status' => 'pending',
             ]);
         }
@@ -279,9 +290,7 @@ class WaybillRepository extends BaseRepository implements WaybillInterface
 
         foreach ($drivers as $index => $driver) {
             $sequence = $index + 1;
-            $seconds = isset($driver['duration_minutes']) && $driver['duration_minutes'] !== ''
-                ? (int) $driver['duration_minutes'] * 60
-                : null;
+            $seconds = $this->extractPlannedSeconds($driver);
             $plan = $waybill->driverPlans()->where('driver_id', (string) $driver['driver_id'])->first();
 
             if ($plan) {
