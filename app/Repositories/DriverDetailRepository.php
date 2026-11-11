@@ -252,6 +252,19 @@ class DriverDetailRepository extends BaseRepository implements DriverDetailInter
             );
             $driver->update(['user_id' => $user->id]);
         } else {
+            if (strcasecmp($user->email, $driver->email) !== 0) {
+                $emailInUse = User::where('email', $driver->email)
+                    ->where('id', '!=', $user->id)
+                    ->exists();
+
+                if ($emailInUse) {
+                    throw new \Exception('The driver email is already assigned to another user account.');
+                }
+
+                $user->email = $driver->email;
+                $user->save();
+            }
+
             $user->update([
                 'password' => Hash::make($plainPassword),
             ]);

@@ -15,6 +15,7 @@ use App\Models\Waybill;
 use App\Models\WaybillDriverPlan;
 use App\Notifications\DriverCredentialsNotification;
 use App\Notifications\DriverOvertimeNotification;
+use App\Repositories\DriverDetailRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -398,6 +399,19 @@ class DriverEldPortalTest extends TestCase
         $res = $this->actingAs($driver->user)->post(route('logout'));
         $res->assertRedirect(route('login'));
         $this->assertGuest();
+    }
+
+    public function test_resending_credentials_uses_the_driver_record_email(): void
+    {
+        $driver = $this->createDriver('old-login-address@example.com');
+        $driver->update(['email' => 'current-driver-address@example.com']);
+
+        $credentials = app(DriverDetailRepository::class)->resendCredentials($driver->id);
+        $user = $driver->user()->firstOrFail()->fresh();
+
+        $this->assertSame('current-driver-address@example.com', $user->email);
+        $this->assertSame('current-driver-address@example.com', $credentials['email']);
+        Notification::assertSentTo($user, DriverCredentialsNotification::class);
     }
 
     public function test_driver_show_renders_eld_logs_and_waybill_breakdown(): void
