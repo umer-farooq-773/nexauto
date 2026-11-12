@@ -268,6 +268,16 @@
             background: #e2e8f0;
         }
 
+        .portal-layout.map-fullscreen-fallback .cockpit-header {
+            display: none;
+        }
+
+        .portal-layout.map-fullscreen-fallback .map-viewport {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+        }
+
         #leaflet-driver-map {
             width: 100%;
             height: 100%;
@@ -958,11 +968,16 @@
 
                 {{-- Sign Out --}}
                 <form action="{{ route('logout') }}" method="POST" class="d-inline m-0">
-                    @csrf
-                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle p-2" title="Sign Out">
-                        <i class="ri-logout-box-r-line"></i>
-                    </button>
-                </form>
+    @csrf
+    <button type="submit"
+        class="btn btn-sm btn-outline-danger rounded-circle d-inline-flex align-items-center justify-content-center p-0"
+        title="Sign Out"
+        style="width: 36px; height: 36px; min-width: 36px;">
+
+        <i class="ri-logout-box-r-line" style="font-size: 17px; line-height: 1;"></i>
+
+    </button>
+</form>
             </div>
         </div>
     </header>
@@ -1017,6 +1032,10 @@
             <button id="btn-toggle-tiles" class="map-control-btn" title="Toggle Map Style">
                 <i class="ri-earth-line text-warning fs-5"></i>
                 <span id="tiles-label">Satellite</span>
+            </button>
+            <button id="btn-toggle-fullscreen" class="map-control-btn" type="button" title="Enter Full Screen" aria-label="Enter Full Screen" aria-pressed="false">
+                <i class="ri-fullscreen-line text-primary fs-5" aria-hidden="true"></i>
+                <span>Full Screen</span>
             </button>
         </div>
     </main>
@@ -1977,6 +1996,73 @@
     };
 
     function setupDOMEvents() {
+        const portalLayout = document.querySelector('.portal-layout');
+        const fullscreenButton = document.getElementById('btn-toggle-fullscreen');
+
+        function updateFullscreenButton() {
+            const isFullscreen = document.fullscreenElement === portalLayout
+                || portalLayout.classList.contains('map-fullscreen-fallback');
+            const icon = fullscreenButton?.querySelector('i');
+            const label = fullscreenButton?.querySelector('span');
+
+            if (fullscreenButton) {
+                fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+                fullscreenButton.setAttribute('aria-label', isFullscreen ? 'Exit Full Screen' : 'Enter Full Screen');
+                fullscreenButton.title = isFullscreen ? 'Exit Full Screen' : 'Enter Full Screen';
+            }
+            if (label) label.textContent = isFullscreen ? 'Exit Full Screen' : 'Full Screen';
+            if (icon) {
+                icon.classList.toggle('ri-fullscreen-line', !isFullscreen);
+                icon.classList.toggle('ri-fullscreen-exit-line', isFullscreen);
+            }
+        }
+
+        fullscreenButton?.addEventListener('click', async function() {
+            if (document.fullscreenElement === portalLayout) {
+                await document.exitFullscreen();
+                return;
+            }
+
+            if (portalLayout.classList.contains('map-fullscreen-fallback')) {
+                portalLayout.classList.remove('map-fullscreen-fallback');
+                updateFullscreenButton();
+                return;
+            }
+
+            if (portalLayout.requestFullscreen) {
+                try {
+                    await portalLayout.requestFullscreen();
+                } catch (error) {
+                    portalLayout.classList.add('map-fullscreen-fallback');
+                }
+            } else {
+                portalLayout.classList.add('map-fullscreen-fallback');
+            }
+
+            updateFullscreenButton();
+            map?.invalidateSize();
+        });
+
+        document.addEventListener('fullscreenchange', function() {
+            if (document.fullscreenElement !== portalLayout) {
+                portalLayout.classList.remove('map-fullscreen-fallback');
+            }
+            updateFullscreenButton();
+            map?.invalidateSize();
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (
+                event.key !== 'Escape'
+                || !portalLayout.classList.contains('map-fullscreen-fallback')
+                || document.querySelector('.modal.show, .offcanvas.show')
+            ) return;
+
+            portalLayout.classList.remove('map-fullscreen-fallback');
+            updateFullscreenButton();
+            map?.invalidateSize();
+        });
+
         // Start duty
         document.getElementById('btn-start-duty')?.addEventListener('click', () => doStartDuty());
         document.getElementById('modal-start-trip-btn')?.addEventListener('click', () => {

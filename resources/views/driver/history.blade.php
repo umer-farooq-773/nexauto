@@ -459,9 +459,12 @@
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
         {{-- Left: Back + Driver Identity --}}
         <div class="d-flex align-items-center gap-3">
-            <a href="{{ route('driver.portal') }}" class="btn btn-sm btn-outline-secondary rounded-circle p-2" title="Back to Portal">
-                <i class="ri-arrow-left-line fw-bold"></i>
-            </a>
+            <a href="{{ route('driver.portal') }}"
+   class="btn btn-sm btn-outline-secondary rounded-circle d-inline-flex align-items-center justify-content-center p-0"
+   title="Back to Portal"
+   style="width: 36px; height: 36px; min-width: 36px;">
+    <i class="ri-arrow-left-line fw-bold" style="font-size: 18px;"></i>
+</a>
             <div class="driver-initials-badge">{{ $initials }}</div>
             <div>
                 <h6 class="mb-0 fw-bold" style="font-size: 15px;">{{ $driver->full_name }}</h6>
