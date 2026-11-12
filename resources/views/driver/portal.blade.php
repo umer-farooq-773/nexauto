@@ -320,6 +320,49 @@
             box-shadow: 0 6px 20px rgba(37, 99, 235, 0.15);
         }
 
+        .map-control-btn.active {
+            background: #2563eb !important;
+            color: #ffffff !important;
+            border-color: #1d4ed8 !important;
+            box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35) !important;
+        }
+
+        .map-control-btn.active i, .map-control-btn.active span {
+            color: #ffffff !important;
+        }
+
+        /* ── Map Overlay Badges & Legends ── */
+        .map-overlay-badge {
+            position: absolute;
+            z-index: 500;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(12px);
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 8px 14px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            font-size: 12px;
+            transition: all 0.25s ease;
+        }
+
+        #traffic-legend-card {
+            top: 16px;
+            right: 16px;
+        }
+
+        #weather-badge-card {
+            top: 76px;
+            right: 16px;
+            min-width: 210px;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
         /* ── Telematics HUD Card ── */
         .telematics-hud-card {
             position: absolute;
@@ -986,21 +1029,57 @@
     <main class="map-viewport">
 
         {{-- Telematics Floating HUD Card --}}
-        <div class="telematics-hud-card">
-            <div class="d-flex align-items-center justify-content-between mb-1">
-                <span class="text-muted small text-uppercase fw-bold" style="font-size: 10px;">Live Telematics</span>
+        <div class="telematics-hud-card" id="telematics-hud-card">
+            <div class="d-flex align-items-center justify-content-between mb-1 pb-1 border-bottom">
+                <div class="d-flex align-items-center gap-1">
+                    <i class="ri-truck-fill text-primary"></i>
+                    <strong class="text-dark" style="font-size: 11px;">{{ $vehicle?->truck_no ?? $vehicle?->fleet_no ?? 'Vehicle' }}</strong>
+                </div>
                 <span id="telematics-status-pill" class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 9px;">
-                    <i class="ri-satellite-line me-1"></i>Active GPS
+                    <i class="ri-satellite-line me-1"></i><span id="hud-gps-text">Active GPS</span>
                 </span>
             </div>
-            <div class="d-flex align-items-baseline gap-2">
-                <span class="fs-3 fw-bold text-dark font-monospace" id="hud-speed">0</span>
-                <span class="text-muted small">km/h</span>
+
+            {{-- Speed and Movement State --}}
+            <div class="d-flex align-items-baseline justify-content-between my-1">
+                <div class="d-flex align-items-baseline gap-1">
+                    <span class="fs-2 fw-bold text-dark font-monospace" id="hud-speed" style="line-height:1;">0</span>
+                    <span class="text-muted small fw-semibold">km/h</span>
+                </div>
+                <div>
+                    <span id="hud-movement" class="badge bg-secondary" style="font-size: 10px;">Parked</span>
+                </div>
             </div>
-            <div class="text-muted" style="font-size: 11px;">
-                <span>Lat: <span id="hud-lat" class="font-monospace text-dark">{{ $waybill?->origin_lat ? number_format($waybill->origin_lat, 4) : '—' }}</span></span>
-                <span class="mx-1">•</span>
-                <span>Lng: <span id="hud-lng" class="font-monospace text-dark">{{ $waybill?->origin_lng ? number_format($waybill->origin_lng, 4) : '—' }}</span></span>
+
+            {{-- Ignition, Engine, Heading, Satellites Grid --}}
+            <div class="d-grid gap-1 my-2 p-1 rounded-2" style="background:#f8fafc; font-size: 10px; grid-template-columns: 1fr 1fr;">
+                <div class="d-flex align-items-center gap-1">
+                    <i class="ri-key-2-line text-muted"></i>
+                    <span>Ignition:</span>
+                    <strong id="hud-ignition" class="text-success">ON</strong>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <i class="ri-temp-hot-line text-muted"></i>
+                    <span>Engine:</span>
+                    <strong id="hud-engine" class="text-dark">Running</strong>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <i class="ri-compass-3-line text-muted"></i>
+                    <span>Heading:</span>
+                    <strong id="hud-heading" class="text-dark">0°</strong>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <i class="ri-signal-tower-line text-muted"></i>
+                    <span>Signal:</span>
+                    <strong id="hud-sats" class="text-dark">Locked</strong>
+                </div>
+            </div>
+
+            {{-- Coordinates --}}
+            <div class="text-muted text-truncate" style="font-size: 10px;">
+                <i class="ri-map-pin-line text-primary"></i>
+                <span id="hud-lat" class="font-monospace text-dark">{{ $waybill?->origin_lat ? number_format($waybill->origin_lat, 4) : '—' }}</span>,
+                <span id="hud-lng" class="font-monospace text-dark">{{ $waybill?->origin_lng ? number_format($waybill->origin_lng, 4) : '—' }}</span>
             </div>
         </div>
 
@@ -1016,18 +1095,61 @@
             </button>
         </div>
 
+        {{-- Floating Badges for Active Traffic & Weather Overlays --}}
+        <div id="traffic-legend-card" class="map-overlay-badge d-none">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <i class="ri-traffic-light-fill text-danger"></i>
+                <strong style="font-size: 11px;">Traffic Flow & Congestion</strong>
+            </div>
+            <div id="traffic-overlay-status" class="text-muted mb-1" style="font-size: 10px;">Checking live traffic near vehicle…</div>
+            <div class="d-flex align-items-center gap-2" style="font-size: 11px;">
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#22c55e;"></span> Clear</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#f97316;"></span> Moderate</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#ef4444;"></span> Heavy</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#7f1d1d;"></span> Jam / Closed</span>
+            </div>
+        </div>
+
+        <div id="weather-badge-card" class="map-overlay-badge d-none">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i id="weather-badge-icon" class="ri-cloud-rain-fill text-primary fs-5"></i>
+                    <div>
+                        <div id="weather-badge-temp" class="fw-bold" style="font-size: 13px;">--°C</div>
+                        <div id="weather-badge-desc" class="text-muted text-capitalize" style="font-size: 10px;">Cloud and precipitation radar</div>
+                    </div>
+                </div>
+                <div class="text-end ps-2 border-start" style="font-size: 10px; color: #64748b;">
+                    <div>Wind: <span id="weather-badge-wind">--</span> km/h</div>
+                    <div>Humidity: <span id="weather-badge-hum">--</span>%</div>
+                </div>
+            </div>
+        </div>
+
         {{-- Leaflet Map Canvas --}}
         <div id="leaflet-driver-map"></div>
 
         {{-- Floating Overlay Controls --}}
         <div class="map-floating-overlay">
-            <button id="btn-center-vehicle" class="map-control-btn" title="Center Map on Vehicle">
+            <button id="btn-toggle-telematics" class="map-control-btn active" type="button" title="Toggle Live Telematics HUD">
+                <i class="ri-dashboard-3-line text-success fs-5"></i>
+                <span id="telematics-label">Telematics</span>
+            </button>
+            <button id="btn-center-vehicle" class="map-control-btn active" title="Lock & Follow Vehicle Position">
                 <i class="ri-crosshair-2-line text-primary fs-5"></i>
-                <span>Vehicle Fix</span>
+                <span id="vehicle-fix-label">Vehicle Fix</span>
             </button>
             <button id="btn-fit-route" class="map-control-btn" title="View Entire Waybill Track">
                 <i class="ri-route-line text-info fs-5"></i>
                 <span>Fit Route</span>
+            </button>
+            <button id="btn-toggle-traffic" class="map-control-btn" type="button" title="Toggle Road Traffic Overlay">
+                <i class="ri-traffic-light-line text-danger fs-5"></i>
+                <span>Road Traffic</span>
+            </button>
+            <button id="btn-toggle-weather" class="map-control-btn" type="button" title="Toggle Weather Radar Overlay">
+                <i class="ri-cloud-rain-line text-info fs-5"></i>
+                <span>Weather</span>
             </button>
             <button id="btn-toggle-tiles" class="map-control-btn" title="Toggle Map Style">
                 <i class="ri-earth-line text-warning fs-5"></i>
@@ -1355,7 +1477,13 @@
             addRemark:       '{{ route('driver.add_remark') }}',
             getLogs:         '{{ route('driver.get_logs') }}',
             liveTelematics:  '{{ route('driver.live_telematics') }}',
-            syncState:       '{{ route('driver.sync_state') }}'
+            syncState:       '{{ route('driver.sync_state') }}',
+            trafficTile:     '{{ url('driver-panel/tile/traffic') }}/{z}/{x}/{y}.png',
+            trafficFlow:    '{{ route('driver.journey.traffic.flow') }}',
+            weatherTile:     '{{ url('driver-panel/tile/weather/clouds_new') }}/{z}/{x}/{y}.png',
+            rainTile:        '{{ url('driver-panel/tile/weather/precipitation_new') }}/{z}/{x}/{y}.png',
+            weatherApi:      '{{ route('driver.journey.weather') }}',
+            trafficIncidents:'{{ route('driver.journey.traffic.incidents') }}'
         }
     };
 
@@ -1698,6 +1826,15 @@
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+        // When driver manually drags/pans map, pause auto-follow lock so they can inspect freely
+        map.on('dragstart', function() {
+            if (autoFollowVehicle) {
+                autoFollowVehicle = false;
+                const btn = document.getElementById('btn-center-vehicle');
+                btn?.classList.remove('active');
+            }
+        });
+
         setTileLayer(false);
         drawWaybillRoute();
         initVehicleMarker();
@@ -1724,6 +1861,342 @@
 
         currentTileLayer.addTo(map);
         isSatellite = satellite;
+    }
+
+    let trafficLayer = null;
+    let incidentLayer = null;
+    let trafficFlowLines = [];
+    let weatherLayer = null;
+    let rainLayer = null;
+    let weatherRefreshTimer = null;
+    let autoFollowVehicle = true; // Auto-follow moving vehicle by default
+
+    function toggleTelematicsHUD() {
+        const hud = document.getElementById('telematics-hud-card');
+        const btn = document.getElementById('btn-toggle-telematics');
+        if (!hud) return;
+
+        if (hud.classList.contains('d-none')) {
+            hud.classList.remove('d-none');
+            btn?.classList.add('active');
+            showFloatingToast('Live Telematics', 'Telematics HUD visible.', 'info');
+        } else {
+            hud.classList.add('d-none');
+            btn?.classList.remove('active');
+            showFloatingToast('Live Telematics', 'Telematics HUD hidden.', 'info');
+        }
+    }
+
+    function toggleVehicleFix() {
+        autoFollowVehicle = !autoFollowVehicle;
+        const btn = document.getElementById('btn-center-vehicle');
+        const label = document.getElementById('vehicle-fix-label');
+
+        if (autoFollowVehicle) {
+            btn?.classList.add('active');
+            if (label) label.textContent = 'Vehicle Fix';
+            if (Number.isFinite(vehicleState.lat) && Number.isFinite(vehicleState.lng) && map) {
+                map.setView([vehicleState.lat, vehicleState.lng], Math.max(map.getZoom(), 15), { animate: true });
+                vehicleState.marker?.openPopup();
+            }
+            showFloatingToast('Vehicle Tracking', 'Camera locked to moving vehicle.', 'success');
+        } else {
+            btn?.classList.remove('active');
+            if (label) label.textContent = 'Vehicle Fix';
+            showFloatingToast('Vehicle Tracking', 'Free map panning enabled.', 'info');
+        }
+    }
+
+    function toggleRoadTraffic() {
+        const btn = document.getElementById('btn-toggle-traffic');
+        const legend = document.getElementById('traffic-legend-card');
+
+        if (trafficLayer) {
+            // Remove traffic tile layer
+            map.removeLayer(trafficLayer);
+            trafficLayer = null;
+
+            if (incidentLayer) {
+                map.removeLayer(incidentLayer);
+                incidentLayer = null;
+            }
+            trafficFlowLines.forEach(line => map.removeLayer(line));
+            trafficFlowLines = [];
+
+            btn?.classList.remove('active');
+            if (legend) legend.classList.add('d-none');
+            showFloatingToast('Road Traffic', 'Traffic flow layer hidden.', 'info');
+            return;
+        }
+
+        // Custom pane ensuring traffic sits between base tiles and vector routes
+        if (!map.getPane('trafficPane')) {
+            map.createPane('trafficPane');
+            map.getPane('trafficPane').style.zIndex = 250;
+        }
+
+        trafficLayer = L.tileLayer(CONFIG.routes.trafficTile, {
+            pane: 'trafficPane',
+            maxZoom: 19,
+            opacity: 0.85,
+            updateWhenIdle: true,
+            updateInterval: 1000,
+            keepBuffer: 1,
+            attribution: '&copy; Road Traffic Flow'
+        });
+        trafficLayer.on('tileerror', function() {
+            const status = document.getElementById('traffic-overlay-status');
+            if (status) status.textContent = 'Traffic tiles could not be loaded from the provider.';
+        });
+
+        btn?.classList.add('active');
+        if (legend) legend.classList.remove('d-none');
+        const status = document.getElementById('traffic-overlay-status');
+        if (status) status.textContent = 'Checking live traffic near vehicle…';
+
+        loadTrafficAtVehicle();
+        trafficLayer.addTo(map);
+        loadTrafficIncidents();
+    }
+
+    function loadTrafficAtVehicle() {
+        if (!trafficLayer) return;
+        const status = document.getElementById('traffic-overlay-status');
+        const lat = Number(vehicleState.lat);
+        const lon = Number(vehicleState.lng);
+        const heading = Number(vehicleState.heading);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !Number.isFinite(heading)) {
+            if (status) status.textContent = 'Waiting for a valid vehicle or route GPS location…';
+            return;
+        }
+
+        const trafficRequest = new AbortController();
+        const trafficTimeout = setTimeout(() => trafficRequest.abort(), 20000);
+        fetch(CONFIG.routes.trafficFlow, {
+            method: 'POST',
+            signal: trafficRequest.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': CONFIG.csrfToken
+            },
+            body: JSON.stringify({lat, lon, heading})
+        })
+            .then(res => {
+                if (!res.ok) throw new Error(`Traffic flow request failed (${res.status})`);
+                return res.json();
+            })
+            .then(data => {
+                if (!trafficLayer || !status) return;
+                const flow = data.flowSegmentData;
+                const segments = Array.isArray(data.segments) ? data.segments : (flow ? [{flowSegmentData: flow}] : []);
+                trafficFlowLines.forEach(line => map.removeLayer(line));
+                trafficFlowLines = [];
+                if (data.available && segments.length) {
+                    segments.forEach(segment => {
+                        const segmentData = segment.flowSegmentData || {};
+                        const coordinates = segmentData.coordinates?.coordinate || [];
+                        const latLngs = coordinates.map(point => [Number(point.latitude ?? point.lat), Number(point.longitude ?? point.lon)])
+                            .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+                        if (latLngs.length > 1) {
+                            const ratio = Number(segmentData.currentSpeed) / Math.max(1, Number(segmentData.freeFlowSpeed));
+                            const color = ratio >= 0.75 ? '#22c55e' : ratio >= 0.4 ? '#f97316' : '#dc2626';
+                            trafficFlowLines.push(L.polyline(latLngs, {color, weight: 7, opacity: 0.95, pane: 'overlayPane'}).addTo(map));
+                        }
+                    });
+                    status.textContent = `Live traffic flow is available on ${segments.length} sampled route segment${segments.length === 1 ? '' : 's'}.`;
+                    showFloatingToast('Road Traffic', status.textContent, 'success');
+                } else {
+                    const lookahead = data.lookaheadKm
+                        ? `Checked next ${data.lookaheadKm} road km (${data.sampledRoadPoints || 0} samples; TomTom target route ${data.routeDistanceKm || '—'} km). `
+                        : '';
+                    status.textContent = `${lookahead}${data.message || 'No live traffic coverage was returned for this road.'}`;
+                    showFloatingToast('Road Traffic', status.textContent, 'warning');
+                }
+            })
+            .catch(err => {
+                const message = err.name === 'AbortError'
+                    ? 'Traffic lookup timed out. Check the server connection and TomTom API availability.'
+                    : err.message;
+                console.error('Traffic flow fetch failed:', err);
+                if (status) status.textContent = message;
+                showFloatingToast('Road Traffic', message, 'warning');
+            })
+            .finally(() => {
+                clearTimeout(trafficTimeout);
+            });
+    }
+
+    function loadTrafficIncidents() {
+        if (!trafficLayer) return;
+        const bounds = map.getBounds();
+        const bbox = `${bounds.getWest().toFixed(4)},${bounds.getSouth().toFixed(4)},${bounds.getEast().toFixed(4)},${bounds.getNorth().toFixed(4)}`;
+
+        fetch(`${CONFIG.routes.trafficIncidents}?bbox=${encodeURIComponent(bbox)}`)
+            .then(res => {
+                if (!res.ok) throw new Error(`Traffic incidents request failed (${res.status})`);
+                return res.json();
+            })
+            .then(data => {
+                if (!trafficLayer) return;
+                if (incidentLayer) {
+                    map.removeLayer(incidentLayer);
+                    incidentLayer = null;
+                }
+
+                if (data && data.features && data.features.length > 0) {
+                    incidentLayer = L.geoJSON(data, {
+                        pointToLayer: function(feature, latlng) {
+                            const iconHtml = `<div class="custom-pin" style="background:#dc2626;color:#ffffff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(0,0,0,0.3);border:2px solid #ffffff;"><i class="ri-alert-fill" style="font-size:14px;"></i></div>`;
+                            return L.marker(latlng, {
+                                icon: L.divIcon({ className: '', html: iconHtml, iconSize: [28, 28], iconAnchor: [14, 14] })
+                            });
+                        },
+                        onEachFeature: function(feature, layer) {
+                            const props = feature.properties || {};
+                            const events = props.events || [];
+                            const desc = events.length > 0 ? (events[0].description || 'Traffic Alert') : (props.iconCategory || 'Traffic Incident');
+                            const delayMin = props.delay ? Math.round(props.delay / 60) : 0;
+                            const road = props.from || props.to || 'Roadway';
+                            layer.bindPopup(`
+                                <div style="min-width: 190px;">
+                                    <div class="fw-bold text-danger d-flex align-items-center gap-1 mb-1">
+                                        <i class="ri-alarm-warning-fill"></i> ${escapeHtml(desc)}
+                                    </div>
+                                    <div class="text-muted small mb-1">Location: <strong>${escapeHtml(road)}</strong></div>
+                                    ${delayMin > 0 ? `<div class="badge bg-danger text-white">Delay: +${delayMin} min</div>` : ''}
+                                </div>
+                            `);
+                        }
+                    }).addTo(map);
+                }
+            })
+            .catch(err => {
+                console.error('Traffic incidents fetch failed:', err);
+                showFloatingToast('Road Traffic', err.message, 'warning');
+            });
+    }
+
+    function toggleWeatherLayer() {
+        const btn = document.getElementById('btn-toggle-weather');
+        const badge = document.getElementById('weather-badge-card');
+
+        if (weatherLayer) {
+            // Remove weather tile layers
+            map.removeLayer(weatherLayer);
+            weatherLayer = null;
+            if (rainLayer) {
+                map.removeLayer(rainLayer);
+                rainLayer = null;
+            }
+
+            if (weatherRefreshTimer) {
+                clearInterval(weatherRefreshTimer);
+                weatherRefreshTimer = null;
+            }
+
+            btn?.classList.remove('active');
+            if (badge) badge.classList.add('d-none');
+            showFloatingToast('Weather', 'Weather radar overlay hidden.', 'info');
+            return;
+        }
+
+        // Custom pane ensuring weather sits between traffic and vector routes
+        if (!map.getPane('weatherPane')) {
+            map.createPane('weatherPane');
+            map.getPane('weatherPane').style.zIndex = 260;
+        }
+
+        // 1. Cloud radar overlay
+        weatherLayer = L.tileLayer(CONFIG.routes.weatherTile, {
+            pane: 'weatherPane',
+            maxZoom: 19,
+            opacity: 0.88,
+            updateWhenIdle: true,
+            updateInterval: 1000,
+            keepBuffer: 1,
+            attribution: '&copy; OpenWeather'
+        });
+        weatherLayer.on('tileerror', function() {
+            const descEl = document.getElementById('weather-badge-desc');
+            if (descEl) descEl.textContent = 'Weather map tiles unavailable';
+        });
+
+        // 2. Precipitation radar overlay
+        if (CONFIG.routes.rainTile) {
+            rainLayer = L.tileLayer(CONFIG.routes.rainTile, {
+                pane: 'weatherPane',
+                maxZoom: 19,
+                opacity: 0.85,
+                updateWhenIdle: true,
+                updateInterval: 1000,
+                keepBuffer: 1
+            });
+            rainLayer.on('tileerror', function() {
+                const descEl = document.getElementById('weather-badge-desc');
+                if (descEl) descEl.textContent = 'Precipitation map tiles unavailable';
+            });
+        }
+
+        btn?.classList.add('active');
+        if (badge) badge.classList.remove('d-none');
+        const descEl = document.getElementById('weather-badge-desc');
+        if (descEl) descEl.textContent = 'Loading local weather…';
+
+        // Start the lightweight JSON request before enqueuing image tiles on this host.
+        fetchWeatherDetails();
+        weatherLayer.addTo(map);
+        if (rainLayer) rainLayer.addTo(map);
+        weatherRefreshTimer = setInterval(fetchWeatherDetails, 300000);
+    }
+
+    function fetchWeatherDetails() {
+        if (!weatherLayer) return;
+        const lat = Number.isFinite(vehicleState.lat) && Math.abs(vehicleState.lat) <= 90 ? vehicleState.lat : CONFIG.originLat;
+        const lon = Number.isFinite(vehicleState.lng) && Math.abs(vehicleState.lng) <= 180 ? vehicleState.lng : CONFIG.originLng;
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+            console.error('Weather request skipped: no valid vehicle or route coordinates.', {lat, lon});
+            showFloatingToast('Weather', 'No valid location is available for weather.', 'warning');
+            return;
+        }
+
+        fetch(`${CONFIG.routes.weatherApi}?lat=${lat}&lon=${lon}`)
+            .then(res => {
+                if (!res.ok) throw new Error(`Weather request failed (${res.status})`);
+                return res.json();
+            })
+            .then(data => {
+                if (!weatherLayer) return;
+                if (data.error) throw new Error(data.error);
+                const current = data.current || data;
+                if (current && (current.temp !== undefined || current.weather)) {
+                    const temp = current.temp !== undefined ? Math.round(current.temp) : '--';
+                    const desc = current.weather && current.weather[0] ? current.weather[0].description : 'Active Radar';
+                    const wind = current.wind_speed !== undefined ? Math.round(current.wind_speed * 3.6) : '--';
+                    const hum = current.humidity !== undefined ? current.humidity : '--';
+
+                    const tempEl = document.getElementById('weather-badge-temp');
+                    const descEl = document.getElementById('weather-badge-desc');
+                    const windEl = document.getElementById('weather-badge-wind');
+                    const humEl = document.getElementById('weather-badge-hum');
+
+                    if (tempEl) tempEl.textContent = `${temp}°C`;
+                    if (descEl) descEl.textContent = desc;
+                    const iconEl = document.getElementById('weather-badge-icon');
+                    if (iconEl) {
+                        const main = current.weather && current.weather[0] ? String(current.weather[0].main).toLowerCase() : '';
+                        iconEl.className = `ri-${main.includes('rain') || main.includes('drizzle') || main.includes('storm') ? 'rainy' : main.includes('cloud') ? 'cloudy' : main.includes('snow') ? 'snowy' : 'sun'}-fill text-primary fs-5`;
+                    }
+                    if (windEl) windEl.textContent = wind;
+                    if (humEl) humEl.textContent = hum;
+                }
+            })
+            .catch(err => {
+                console.error('Weather fetch failed:', err);
+                const descEl = document.getElementById('weather-badge-desc');
+                if (descEl) descEl.textContent = 'Weather unavailable';
+                showFloatingToast('Weather', err.message, 'warning');
+            });
     }
 
     function drawWaybillRoute() {
@@ -1825,10 +2298,11 @@
         vehicleState.marker.bindPopup(`<strong>${CONFIG.driverName}</strong><br>Fleet Vehicle Live GPS`);
     }
 
-    function updateVehiclePosition(lat, lng, speed, heading) {
+    function updateVehiclePosition(lat, lng, speed, heading, extras = {}) {
         lat = parseFloat(lat);
         lng = parseFloat(lng);
         speed = parseFloat(speed) || 0;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
         heading = parseInt(heading) || 0;
 
         if (isNaN(lat) || isNaN(lng)) return;
@@ -1847,13 +2321,86 @@
             }
         }
 
-        // Update telematics HUD
+        // Live Auto-Follow Vehicle Lock
+        if (autoFollowVehicle && map) {
+            map.panTo([lat, lng], { animate: true, duration: 0.8 });
+        }
+
+        // Update Rich Telematics HUD Card
         const hudSpeed = document.getElementById('hud-speed');
         const hudLat = document.getElementById('hud-lat');
         const hudLng = document.getElementById('hud-lng');
+        const hudIgnition = document.getElementById('hud-ignition');
+        const hudEngine = document.getElementById('hud-engine');
+        const hudMovement = document.getElementById('hud-movement');
+        const hudHeading = document.getElementById('hud-heading');
+        const hudSats = document.getElementById('hud-sats');
+
         if (hudSpeed) hudSpeed.textContent = Math.round(speed);
         if (hudLat) hudLat.textContent = lat.toFixed(4);
         if (hudLng) hudLng.textContent = lng.toFixed(4);
+
+        const isMoving = speed > 3;
+        const isIgnition = extras.ignition !== undefined && extras.ignition !== null ? extras.ignition : null;
+        const engineText = extras.engine !== undefined && extras.engine !== null ? String(extras.engine) : null;
+
+        if (hudMovement) {
+            if (isMoving) {
+                hudMovement.className = 'badge bg-primary text-white';
+                hudMovement.textContent = 'In Motion';
+            } else if (isIgnition === true) {
+                hudMovement.className = 'badge bg-warning text-dark';
+                hudMovement.textContent = 'Idling';
+            } else if (isIgnition === null) {
+                hudMovement.className = 'badge bg-secondary';
+                hudMovement.textContent = 'State Unknown';
+            } else {
+                hudMovement.className = 'badge bg-secondary text-white';
+                hudMovement.textContent = 'Parked';
+            }
+        }
+
+        if (hudIgnition) {
+            if (isIgnition === true) {
+                hudIgnition.className = 'text-success fw-bold';
+                hudIgnition.textContent = 'ON';
+            } else if (isIgnition === false) {
+                hudIgnition.className = 'text-secondary fw-bold';
+                hudIgnition.textContent = 'OFF';
+            } else {
+                hudIgnition.className = 'text-muted fw-bold';
+                hudIgnition.textContent = 'N/A';
+            }
+        }
+
+        if (hudEngine) {
+            if (engineText) {
+                hudEngine.className = 'text-dark fw-bold';
+                hudEngine.textContent = engineText;
+            } else if (isMoving) {
+                hudEngine.className = 'text-success fw-bold';
+                hudEngine.textContent = 'Running';
+            } else if (isIgnition === true) {
+                hudEngine.className = 'text-warning fw-bold';
+                hudEngine.textContent = 'Idling';
+            } else if (isIgnition === false) {
+                hudEngine.className = 'text-muted fw-bold';
+                hudEngine.textContent = 'Off';
+            } else {
+                hudEngine.className = 'text-muted fw-bold';
+                hudEngine.textContent = 'N/A';
+            }
+        }
+
+        if (hudHeading) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            const dirIdx = Math.round(((heading %= 360) < 0 ? heading + 360 : heading) / 45) % 8;
+            hudHeading.textContent = `${directions[dirIdx]} ${heading}°`;
+        }
+
+        if (hudSats) {
+            hudSats.textContent = extras.sats || 'Locked';
+        }
 
         // Movement check: If vehicle is moving (> 3 km/h) and timer is NOT running
         if (speed > 3 && !timerState.isRunning) {
@@ -1892,13 +2439,37 @@
                             matchedUnit = units[0];
                         }
 
+                        function parseUnitData(unit) {
+                            const pos = unit.getPosition() || {};
+                            const lastMsg = unit.getLastMessage() || {};
+                            const params = lastMsg.p || {};
+                            const ignitionValue = params.ign ?? params.io_1 ?? params.in1 ?? params.acc ?? params.ignition;
+                            const isIgn = ignitionValue !== undefined ? (ignitionValue === 1 || ignitionValue === true || ignitionValue === '1') : null;
+                            return {
+                                lat: pos.y,
+                                lng: pos.x,
+                                speed: pos.s || 0,
+                                heading: pos.c || 0,
+                                extras: {
+                                    ignition: isIgn,
+                                    engine: params.engine_status ?? params.engine_power ?? params.engine ?? null,
+                                    sats: params.sats ? `${params.sats} Sats` : 'Wialon Fix',
+                                    gpsFix: true
+                                }
+                            };
+                        }
+
                         if (matchedUnit) {
-                            const pos = matchedUnit.getPosition();
-                            if (pos) updateVehiclePosition(pos.y, pos.x, pos.s, pos.c);
+                            const initial = parseUnitData(matchedUnit);
+            if (Number.isFinite(initial.lat) && Number.isFinite(initial.lng) && Math.abs(initial.lat) <= 90 && Math.abs(initial.lng) <= 180) {
+                                updateVehiclePosition(initial.lat, initial.lng, initial.speed, initial.heading, initial.extras);
+                            }
 
                             matchedUnit.addListener('changePosition', function() {
-                                const newPos = matchedUnit.getPosition();
-                                if (newPos) updateVehiclePosition(newPos.y, newPos.x, newPos.s, newPos.c);
+                                const tel = parseUnitData(matchedUnit);
+                                if (Number.isFinite(tel.lat) && Number.isFinite(tel.lng) && Math.abs(tel.lat) <= 90 && Math.abs(tel.lng) <= 180) {
+                                    updateVehiclePosition(tel.lat, tel.lng, tel.speed, tel.heading, tel.extras);
+                                }
                             });
                         } else {
                             startFallbackPolling();
@@ -1918,12 +2489,16 @@
             fetch(`${CONFIG.routes.liveTelematics}?vehicle_id=${CONFIG.vehicleId}`)
                 .then(r => r.json())
                 .then(data => {
-                    if (data && data.success) {
-                        updateVehiclePosition(data.latitude, data.longitude, data.speed_kmh, data.heading);
+                    if (data && data.success && data.latitude !== null && data.longitude !== null && Number.isFinite(Number(data.latitude)) && Number.isFinite(Number(data.longitude)) && Math.abs(Number(data.latitude)) <= 90 && Math.abs(Number(data.longitude)) <= 180) {
+                        updateVehiclePosition(data.latitude, data.longitude, data.speed_kmh, data.heading, {
+                            ignition: data.ignition,
+                            engine: data.engine,
+                            sats: 'Cellular Fix'
+                        });
                     }
                 })
                 .catch(() => {});
-        }, 5000);
+        }, 3000);
     }
 
     // ── DOM Actions & Event Listeners ──
@@ -2165,6 +2740,16 @@
         // Toggle map tiles
         document.getElementById('btn-toggle-tiles')?.addEventListener('click', function() {
             setTileLayer(!isSatellite);
+        });
+
+        // Toggle Road Traffic Layer
+        document.getElementById('btn-toggle-traffic')?.addEventListener('click', function() {
+            toggleRoadTraffic();
+        });
+
+        // Toggle Weather Layer
+        document.getElementById('btn-toggle-weather')?.addEventListener('click', function() {
+            toggleWeatherLayer();
         });
 
         // Sync Real-Time Data Button

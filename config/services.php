@@ -64,4 +64,17 @@ return [
     'geoapify' => [
         'api_key' => env('GEOAPIFY_API_KEY') ?: env('GEO_APIFY'),
     ],
+
+    'openweather' => [
+        'base_url' => env('OPENWEATHER_BASE_URL', 'https://api.openweathermap.org'),
+        'tile_base_url' => env('OPENWEATHER_TILE_BASE_URL', 'https://tile.openweathermap.org'),
+        'key' => env('OPENWEATHER_API_KEY') ?: env('OPEN_WEATHER_API_KEY'),
+        'ttl' => env('OPENWEATHER_TTL', 600),
+    ],
+
+    'tomtom' => [
+        'base_url' => env('TOMTOM_BASE_URL', 'https://api.tomtom.com'),
+        'key' => env('TOMTOM_API_KEY') ?: (env('TOM_TOM_ROAD_API_KEY') ?: env('TOM_TOM_API_KEY')),
+        'ttl' => env('TOMTOM_TTL', 300),
+    ],
 ];

@@ -45,6 +45,19 @@ Route::post('/logout', [HomeController::class, 'logout'])->name('logout');
 Route::group(
     ['middleware' => 'checkMail'],
     function () {
+         Route::get('/journey/weather', [\App\Http\Controllers\DriverJourneyController::class, 'weather'])
+        ->name('journey.weather');
+    Route::post('/journey/traffic/flow', [\App\Http\Controllers\DriverJourneyController::class, 'trafficFlow'])
+        ->name('journey.traffic.flow');
+    Route::get('/journey/traffic/incidents', [\App\Http\Controllers\DriverJourneyController::class, 'trafficIncidents'])
+        ->name('journey.traffic.incidents');
+    Route::get('/journey/tile/traffic/{z}/{x}/{y}.png', [\App\Http\Controllers\DriverJourneyController::class, 'trafficTile'])
+        ->where(['z' => '[0-9]+', 'x' => '[0-9]+', 'y' => '[0-9]+'])
+        ->name('journey.tile.traffic');
+    Route::get('/journey/tile/weather/{layer}/{z}/{x}/{y}.png', [\App\Http\Controllers\DriverJourneyController::class, 'weatherTile'])
+        ->where(['layer' => '[a-z0-9_]+', 'z' => '[0-9]+', 'x' => '[0-9]+', 'y' => '[0-9]+'])
+        ->name('journey.tile.weather');
+
         Route::get('/', [HomeController::class, 'index'])->name('auth');
         Route::get('/dashboard/chart-data', [HomeController::class, 'chartFilterData'])->name('dashboard.chart_data');
 

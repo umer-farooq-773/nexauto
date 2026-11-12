@@ -623,6 +623,12 @@
 
         <button type="button" id="go-btn">Go</button>&nbsp;&nbsp;
         <button type="button" id="show-all-btn">Show all vehicles</button>
+        <button type="button" id="toggle-traffic-btn" style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;"></span> Road Traffic
+        </button>
+        <button type="button" id="toggle-weather-btn" style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#0284c7;"></span> Weather
+        </button>
         <span id="vehicle-count">0 vehicles</span>
     </div>
 
@@ -2205,6 +2211,60 @@ function getWialonError(code) {
     return 'Wialon error code ' + code;
 }
 
+
+// Map Tracking Traffic & Weather Overlays
+let trackingTrafficLayer = null;
+let trackingWeatherLayer = null;
+
+document.getElementById('toggle-traffic-btn')?.addEventListener('click', function () {
+    const btn = this;
+    if (trackingTrafficLayer) {
+        map.removeLayer(trackingTrafficLayer);
+        trackingTrafficLayer = null;
+        btn.style.background = '#ffffff';
+        btn.style.color = '#0f172a';
+        btn.style.borderColor = '#cbd5e1';
+    } else {
+        if (!map.getPane('trafficPane')) {
+            map.createPane('trafficPane');
+            map.getPane('trafficPane').style.zIndex = 250;
+        }
+        trackingTrafficLayer = L.tileLayer('{{ url('my-account/journey/tile/traffic') }}/{z}/{x}/{y}.png', {
+            pane: 'trafficPane',
+            maxZoom: 19,
+            opacity: 0.85,
+            attribution: '&copy; TomTom Traffic'
+        }).addTo(map);
+        btn.style.background = '#ef4444';
+        btn.style.color = '#ffffff';
+        btn.style.borderColor = '#dc2626';
+    }
+});
+
+document.getElementById('toggle-weather-btn')?.addEventListener('click', function () {
+    const btn = this;
+    if (trackingWeatherLayer) {
+        map.removeLayer(trackingWeatherLayer);
+        trackingWeatherLayer = null;
+        btn.style.background = '#ffffff';
+        btn.style.color = '#0f172a';
+        btn.style.borderColor = '#cbd5e1';
+    } else {
+        if (!map.getPane('weatherPane')) {
+            map.createPane('weatherPane');
+            map.getPane('weatherPane').style.zIndex = 260;
+        }
+        trackingWeatherLayer = L.tileLayer('{{ url('my-account/journey/tile/weather/precipitation_new') }}/{z}/{x}/{y}.png', {
+            pane: 'weatherPane',
+            maxZoom: 19,
+            opacity: 0.65,
+            attribution: '&copy; OpenWeather'
+        }).addTo(map);
+        btn.style.background = '#0284c7';
+        btn.style.color = '#ffffff';
+        btn.style.borderColor = '#0369a1';
+    }
+});
 
 /* ============================================================
    PAGE LOAD

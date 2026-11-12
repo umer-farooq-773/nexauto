@@ -200,6 +200,17 @@ Route::middleware(['auth'])->prefix('driver-panel')->as('driver.')->group(functi
     Route::get('/sync-state', [\App\Http\Controllers\DriverPortalController::class, 'syncState'])->name('sync_state');
     Route::get('/history', [\App\Http\Controllers\DriverPortalController::class, 'history'])->name('history');
     Route::get('/history-logs', [\App\Http\Controllers\DriverPortalController::class, 'historyLogs'])->name('history_logs');
+
+    // Driver Journey Weather, Traffic & Tile Proxy Routes
+    Route::get('/journey/weather', [\App\Http\Controllers\DriverJourneyController::class, 'weather'])->name('journey.weather');
+    Route::post('/journey/traffic/flow', [\App\Http\Controllers\DriverJourneyController::class, 'trafficFlow'])->name('journey.traffic.flow');
+    Route::get('/journey/traffic/incidents', [\App\Http\Controllers\DriverJourneyController::class, 'trafficIncidents'])->name('journey.traffic.incidents');
+    Route::get('/tile/traffic/{z}/{x}/{y}.png', [\App\Http\Controllers\DriverJourneyController::class, 'trafficTile'])
+        ->where(['z' => '[0-9]+', 'x' => '[0-9]+', 'y' => '[0-9]+'])
+        ->name('tile.traffic');
+    Route::get('/tile/weather/{layer}/{z}/{x}/{y}.png', [\App\Http\Controllers\DriverJourneyController::class, 'weatherTile'])
+        ->where(['layer' => '[a-z0-9_]+', 'z' => '[0-9]+', 'x' => '[0-9]+', 'y' => '[0-9]+'])
+        ->name('tile.weather');
 });
 Route::redirect('/driver', '/driver-panel');
 

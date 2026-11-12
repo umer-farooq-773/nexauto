@@ -647,28 +647,58 @@ class DriverPortalController extends Controller
             return response()->json(['success' => false, 'message' => 'No vehicle id provided']);
         }
 
-        $loc = DB::table('vehicle_current_locations')
-            ->where('vehicle_id', $vehicleId)
-            ->latest('last_received_at')
-            ->first();
+        $vehicle = Vehicle::with('vehicleMakeModel')->find($vehicleId);
+        if (!$vehicle) {
+            return response()->json(['success' => false, 'message' => 'Vehicle not found'], 404);
+        }
+
+        $loc = null;
+        if (\Illuminate\Support\Facades\Schema::hasTable('vehicle_current_locations')) {
+            try {
+                $loc = DB::table('vehicle_current_locations')
+                    ->where('vehicle_id', $vehicleId)
+                    ->latest('last_received_at')
+                    ->first();
+            } catch (\Throwable $e) {
+                Log::warning('Driver live telematics location lookup failed', [
+                    'vehicle_id' => $vehicleId,
+                    'error' => $e->getMessage(),
+                ]);
+                $loc = null;
+            }
+        }
 
         if ($loc) {
             return response()->json([
                 'success'   => true,
+                'fleet_no'  => $vehicle?->fleet_no ?? $vehicle?->truck_no,
+                'plate_no'  => $vehicle?->truck_no ?? $vehicle?->plate_number,
+                'model'     => $vehicle?->vehicleMakeModel?->name,
                 'latitude'  => (float) $loc->latitude,
                 'longitude' => (float) $loc->longitude,
                 'speed_kmh' => (float) $loc->speed_kmh,
-                'heading'   => (int) $loc->heading,
-                'time'      => Carbon::parse($loc->gps_time)->toIso8601String(),
+                'heading'   => (int) ($loc->heading ?? 0),
+                'ignition'  => (bool) ($loc->ignition ?? false),
+                'engine'    => $loc->engine_status ?: ((bool) ($loc->ignition ?? false) ? 'Running' : 'Off'),
+                'gps_status'=> 'Active',
+                'last_received_at' => $loc->last_received_at ?? null,
+                'time'      => Carbon::parse($loc->gps_time ?? now())->toIso8601String(),
             ]);
         }
 
-        // Return vehicle default or waybill origin coordinates
-        $vehicle = Vehicle::find($vehicleId);
+        // Return vehicle default details
         return response()->json([
-            'success'   => false,
-            'message'   => 'No live GPS fix recorded yet',
-            'fleet_no'  => $vehicle?->fleet_no,
+            'success'   => true,
+            'fleet_no'  => $vehicle?->fleet_no ?? $vehicle?->truck_no,
+            'plate_no'  => $vehicle?->truck_no ?? $vehicle?->plate_number,
+            'model'     => $vehicle?->vehicleMakeModel?->name,
+            'gps_status'=> $vehicle?->gps_status ?? 'Active',
+            'latitude'  => null,
+            'longitude' => null,
+            'speed_kmh' => 0,
+            'heading'   => 0,
+            'ignition'  => false,
+            'engine'    => 'Off',
         ]);
     }
 
