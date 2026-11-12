@@ -101,19 +101,19 @@
             @endif
         @endforeach
 
-        <!-- Vehicle History (Track Player) Menu -->
-        {{-- <a
+        <!-- Vehicle Telemetry / History -->
+        <a
             class="nav-item {{ request()->routeIs('vehicle_history.*') ? 'active' : '' }}"
             href="{{ route('vehicle_history.index') }}"
         >
             <span class="nav-icon-wrapper">
-                <i class="fas fa-file-audio nav-icon"></i>
+                <i class="fas fa-gauge-high nav-icon"></i>
             </span>
-            <span class="nav-label">{{ __('Vehicle History') }}</span>
+            <span class="nav-label">{{ __('Vehicle Telemetry') }}</span>
             @if(request()->routeIs('vehicle_history.*'))
                 <span class="nav-active-indicator"></span>
             @endif
-        </a> --}}
+        </a>
 
         <!-- Track Incidents Menu -->
         <a

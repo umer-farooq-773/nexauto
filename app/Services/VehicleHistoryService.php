@@ -533,10 +533,8 @@ class VehicleHistoryService extends WialonService
                 $ignition = ((int) $params['in1']) > 0;
             } elseif (isset($params['acc'])) {
                 $ignition = ((int) $params['acc']) > 0;
-            } elseif ($speed > 2) {
-                $ignition = true; // infer from movement
             }
-            $evaluated['Ignition'] = $ignition !== null ? ($ignition ? 'On' : 'Off') : '--';
+            $evaluated['Ignition (tracker input)'] = $ignition !== null ? ($ignition ? 'On' : 'Off') : 'Not Available';
         }
 
         // 2. Fuel Level resolution (only if not already from Wialon sensor)
@@ -568,7 +566,33 @@ class VehicleHistoryService extends WialonService
             } elseif (isset($params['engine_time'])) {
                 $eh = (float) $params['engine_time'];
             }
-            $evaluated['Engine Hours'] = $eh !== null ? round($eh, 1) . ' h' : '--';
+            $evaluated['Engine Hours'] = $eh !== null ? round($eh, 1) . ' h' : 'Not Available';
+        }
+
+        // Expose engine data only when the device actually reports it. Do not
+        // infer engine power from GPS movement or external supply voltage.
+        foreach (['engine_power', 'engine_status'] as $key) {
+            if (array_key_exists($key, $params)) {
+                $raw = $params[$key];
+                $evaluated['Engine Power (reported)'] = is_numeric($raw) && in_array((float) $raw, [0.0, 1.0], true)
+                    ? ((float) $raw === 1.0 ? 'On' : 'Off')
+                    : (string) $raw;
+                break;
+            }
+        }
+
+        foreach (['engine_rpm', 'rpm', 'can_rpm'] as $key) {
+            if (isset($params[$key]) && is_numeric($params[$key])) {
+                $evaluated['Engine RPM (reported)'] = round((float) $params[$key]) . ' rpm';
+                break;
+            }
+        }
+
+        foreach (['engine_temp', 'coolant_temp', 'can_temp'] as $key) {
+            if (isset($params[$key]) && is_numeric($params[$key])) {
+                $evaluated['Engine Temperature (reported)'] = round((float) $params[$key], 1) . ' °C';
+                break;
+            }
         }
 
         // 4. Fuel Rate resolution

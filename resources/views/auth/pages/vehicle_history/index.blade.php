@@ -1111,7 +1111,9 @@
             top: 56px;
             right: 14px;
             z-index: 10;
-            width: 290px;
+            width: 340px;
+            max-height: min(72vh, 620px);
+            overflow-y: auto;
             background: rgba(15, 23, 42, 0.9);
             backdrop-filter: blur(12px);
             color: #f8fafc;
@@ -1679,7 +1681,7 @@
                     <button type="button" class="tool-btn" onclick="fitTrackBounds()" title="Fit complete track in view">
                         <i class="ri-focus-3-line"></i> {{ __('Fit Track') }}
                     </button>
-                    <button type="button" class="tool-btn" onclick="toggleTelemetryHud()" title="Toggle Telemetry HUD">
+                    <button type="button" class="tool-btn active" id="telemetry-hud-toggle" onclick="toggleTelemetryHud()" title="Toggle Telemetry HUD" aria-controls="telemetry-hud" aria-pressed="true">
                         <i class="ri-dashboard-3-line"></i> {{ __('Telemetry') }}
                     </button>
                     <button type="button" class="tool-btn" onclick="toggleFullscreen()" title="Toggle Fullscreen View">
@@ -1701,8 +1703,12 @@
                 <!-- Floating Telemetry & Sensors HUD (Right Side) -->
                 <div class="telemetry-hud-card" id="telemetry-hud">
                     <div class="hud-header">
-                        <h6><i class="ri-radar-fill text-primary"></i> {{ __('Vehicle Telemetry') }}</h6>
-                        <span class="badge bg-primary" id="hud-status-badge">STANDBY</span>
+                        <div>
+                            <h6><i class="ri-radar-fill text-primary"></i> {{ __('Vehicle Telemetry') }}</h6>
+                            <div class="small text-white mt-1" id="hud-vehicle-name">{{ __('Select a vehicle') }}</div>
+                            <div class="small text-white-50" id="hud-vehicle-meta">—</div>
+                        </div>
+                        <span class="badge bg-primary" id="hud-status-badge">{{ __('STANDBY') }}</span>
                     </div>
 
                     <div class="hud-grid">
@@ -1722,25 +1728,18 @@
                             <div class="hud-cell-label">{{ __('Satellites') }}</div>
                             <div class="hud-cell-value" id="hud-sats">0</div>
                         </div>
+                        <div class="hud-cell">
+                            <div class="hud-cell-label">{{ __('Coordinates') }}</div>
+                            <div class="hud-cell-value" id="hud-coordinates">—</div>
+                        </div>
+                        <div class="hud-cell">
+                            <div class="hud-cell-label">{{ __('GPS Time') }}</div>
+                            <div class="hud-cell-value" id="hud-gps-time">—</div>
+                        </div>
                     </div>
 
                     <div class="hud-sensors-section" id="hud-sensors-container">
-                        <div class="hud-sensor-row">
-                            <span class="hud-sensor-name">{{ __('Ignition') }}</span>
-                            <span class="hud-sensor-val" id="hud-ign">--</span>
-                        </div>
-                        <div class="hud-sensor-row">
-                            <span class="hud-sensor-name">{{ __('Engine Hours') }}</span>
-                            <span class="hud-sensor-val" id="hud-eh">--</span>
-                        </div>
-                        <div class="hud-sensor-row">
-                            <span class="hud-sensor-name">{{ __('Fuel Level') }}</span>
-                            <span class="hud-sensor-val" id="hud-fuel">--</span>
-                        </div>
-                        <div class="hud-sensor-row">
-                            <span class="hud-sensor-name">{{ __('Voltage') }}</span>
-                            <span class="hud-sensor-val" id="hud-volt">--</span>
-                        </div>
+                        <div class="text-muted text-center py-1">{{ __('Load a track to view sensor readings') }}</div>
                     </div>
                 </div>
 
@@ -2134,6 +2133,12 @@
         }
 
         function handleTrackDataLoaded(data) {
+            const vehicle = data.vehicle || {};
+            document.getElementById('hud-vehicle-name').textContent = vehicle.fleet_no || vehicle.unit_name || vehicle.unit_id || 'Vehicle';
+            document.getElementById('hud-vehicle-meta').textContent = [vehicle.make_model, vehicle.truck_no, vehicle.driver_name]
+                .filter(value => value && value !== '—' && value !== 'N/A')
+                .join(' • ') || '—';
+
             // 1. Update Sidebar KPIs
             document.getElementById('side-mileage').textContent = (data.summary.total_mileage_km || 0).toFixed(2) + ' km';
             document.getElementById('side-duration').textContent = data.summary.total_duration_fmt || '0h 0m';
@@ -2413,16 +2418,12 @@
         }
 
         function toggleTelemetryHUD() {
-            const hudCard = document.getElementById('telemetry-hud');
             const toggleBtn = document.getElementById('telemetry-toggle-btn');
-            
-            if (hudCard.classList.contains('show-mobile')) {
-                hudCard.classList.remove('show-mobile');
-                toggleBtn.querySelector('i').className = 'ri-radar-line';
-            } else {
-                hudCard.classList.add('show-mobile');
-                toggleBtn.querySelector('i').className = 'ri-close-line';
-            }
+            toggleTelemetryHud();
+            const isOpen = window.matchMedia('(max-width: 1024px)').matches
+                ? document.getElementById('telemetry-hud').classList.contains('show-mobile')
+                : getComputedStyle(document.getElementById('telemetry-hud')).display !== 'none';
+            if (toggleBtn) toggleBtn.querySelector('i').className = isOpen ? 'ri-close-line' : 'ri-radar-line';
         }
 
         function setPlaybackSpeed(speed) {
@@ -2510,6 +2511,8 @@
             document.getElementById('hud-course').textContent = `${pt.course}°`;
             document.getElementById('hud-alt').innerHTML = `${pt.alt} <span class="fs-6 font-normal">m</span>`;
             document.getElementById('hud-sats').textContent = pt.sats;
+            document.getElementById('hud-coordinates').textContent = `${Number(pt.lat).toFixed(5)}, ${Number(pt.lng).toFixed(5)}`;
+            document.getElementById('hud-gps-time').textContent = pt.date_fmt || pt.datetime || pt.time || '—';
             document.getElementById('hud-status-badge').textContent = pt.speed > 0 ? `MOVING (${pt.speed} km/h)` : 'STOPPED';
             document.getElementById('hud-status-badge').className = pt.speed > 0 ? 'badge bg-success' : 'badge bg-secondary';
 
@@ -2688,7 +2691,16 @@
 
         function toggleTelemetryHud() {
             const hud = document.getElementById('telemetry-hud');
-            hud.style.display = hud.style.display === 'none' ? 'block' : 'none';
+            const button = document.getElementById('telemetry-hud-toggle');
+            const mobile = window.matchMedia('(max-width: 1024px)').matches;
+            const isOpen = mobile ? hud.classList.contains('show-mobile') : getComputedStyle(hud).display !== 'none';
+            if (mobile) {
+                hud.classList.toggle('show-mobile', !isOpen);
+            } else {
+                hud.style.display = isOpen ? 'none' : 'block';
+            }
+            button?.setAttribute('aria-pressed', String(!isOpen));
+            button?.classList.toggle('active', !isOpen);
         }
 
         function escapeHtml(str) {
@@ -2766,4 +2778,4 @@
             window.location.href = exportUrl;
         }
     </script>
-</x-layouts.auth>   
+</x-layouts.auth>
