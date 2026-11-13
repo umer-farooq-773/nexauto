@@ -1099,15 +1099,17 @@
         <div id="traffic-legend-card" class="map-overlay-badge d-none">
             <div class="d-flex align-items-center gap-2 mb-1">
                 <i class="ri-traffic-light-fill text-danger"></i>
-                <strong style="font-size: 11px;">Traffic Flow & Congestion</strong>
+                <strong style="font-size: 11px;">TomTom live traffic</strong>
             </div>
             <div id="traffic-overlay-status" class="text-muted mb-1" style="font-size: 10px;">Checking live traffic near vehicle…</div>
             <div class="d-flex align-items-center gap-2" style="font-size: 11px;">
-                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#22c55e;"></span> Clear</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#22c55e;"></span> Free flow</span>
                 <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#f97316;"></span> Moderate</span>
                 <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#ef4444;"></span> Heavy</span>
-                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#7f1d1d;"></span> Jam / Closed</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#7f1d1d;"></span> Severe</span>
+                <span class="d-flex align-items-center gap-1"><span class="legend-dot" style="background:#94a3b8;"></span> No data</span>
             </div>
+            <small class="text-muted" style="font-size:9px;">Uncoloured roads have no confirmed traffic status.</small>
         </div>
 
         <div id="weather-badge-card" class="map-overlay-badge d-none">
@@ -1502,6 +1504,7 @@
         lng:     CONFIG.originLng || 73.0479,
         speed:   0,
         heading: 0,
+        fixTime: null,
         marker:  null,
         hasFix:  false
     };
@@ -1865,7 +1868,7 @@
 
     let trafficLayer = null;
     let incidentLayer = null;
-    let trafficFlowLines = [];
+    let trafficFlowRequest = null;
     let weatherLayer = null;
     let rainLayer = null;
     let weatherRefreshTimer = null;
@@ -1915,14 +1918,13 @@
             // Remove traffic tile layer
             map.removeLayer(trafficLayer);
             trafficLayer = null;
+            if (trafficFlowRequest) trafficFlowRequest.abort();
+            trafficFlowRequest = null;
 
             if (incidentLayer) {
                 map.removeLayer(incidentLayer);
                 incidentLayer = null;
             }
-            trafficFlowLines.forEach(line => map.removeLayer(line));
-            trafficFlowLines = [];
-
             btn?.classList.remove('active');
             if (legend) legend.classList.add('d-none');
             showFloatingToast('Road Traffic', 'Traffic flow layer hidden.', 'info');
@@ -1942,7 +1944,11 @@
             updateWhenIdle: true,
             updateInterval: 1000,
             keepBuffer: 1,
-            attribution: '&copy; Road Traffic Flow'
+            attribution: '&copy; <a href="https://www.tomtom.com/legal/" target="_blank" rel="noopener">TomTom</a>'
+        });
+        trafficLayer.once('load', function() {
+            const status = document.getElementById('traffic-overlay-status');
+            if (status && status.textContent === 'Loading TomTom traffic tiles…') status.textContent = 'Traffic tiles loaded. Coverage varies by road and region.';
         });
         trafficLayer.on('tileerror', function() {
             const status = document.getElementById('traffic-overlay-status');
@@ -1952,7 +1958,7 @@
         btn?.classList.add('active');
         if (legend) legend.classList.remove('d-none');
         const status = document.getElementById('traffic-overlay-status');
-        if (status) status.textContent = 'Checking live traffic near vehicle…';
+        if (status) status.textContent = 'Loading TomTom traffic tiles…';
 
         loadTrafficAtVehicle();
         trafficLayer.addTo(map);
@@ -1965,16 +1971,22 @@
         const lat = Number(vehicleState.lat);
         const lon = Number(vehicleState.lng);
         const heading = Number(vehicleState.heading);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !Number.isFinite(heading)) {
-            if (status) status.textContent = 'Waiting for a valid vehicle or route GPS location…';
+        if (!vehicleState.hasFix || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || !Number.isFinite(heading)) {
+            if (status) status.textContent = 'Traffic tiles are on. Waiting for a valid vehicle GPS fix to check road coverage.';
+            return;
+        }
+        if (!vehicleState.fixTime || Date.now() - vehicleState.fixTime > 5 * 60 * 1000 || vehicleState.fixTime > Date.now() + 60 * 1000) {
+            if (status) status.textContent = 'Traffic tiles are on. The vehicle GPS fix is stale, so road coverage was not checked.';
             return;
         }
 
-        const trafficRequest = new AbortController();
-        const trafficTimeout = setTimeout(() => trafficRequest.abort(), 20000);
+        if (trafficFlowRequest) trafficFlowRequest.abort();
+        const requestController = new AbortController();
+        trafficFlowRequest = requestController;
+        const trafficTimeout = setTimeout(() => requestController.abort(), 20000);
         fetch(CONFIG.routes.trafficFlow, {
             method: 'POST',
-            signal: trafficRequest.signal,
+            signal: requestController.signal,
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
@@ -1990,40 +2002,23 @@
                 if (!trafficLayer || !status) return;
                 const flow = data.flowSegmentData;
                 const segments = Array.isArray(data.segments) ? data.segments : (flow ? [{flowSegmentData: flow}] : []);
-                trafficFlowLines.forEach(line => map.removeLayer(line));
-                trafficFlowLines = [];
                 if (data.available && segments.length) {
-                    segments.forEach(segment => {
-                        const segmentData = segment.flowSegmentData || {};
-                        const coordinates = segmentData.coordinates?.coordinate || [];
-                        const latLngs = coordinates.map(point => [Number(point.latitude ?? point.lat), Number(point.longitude ?? point.lon)])
-                            .filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
-                        if (latLngs.length > 1) {
-                            const ratio = Number(segmentData.currentSpeed) / Math.max(1, Number(segmentData.freeFlowSpeed));
-                            const color = ratio >= 0.75 ? '#22c55e' : ratio >= 0.4 ? '#f97316' : '#dc2626';
-                            trafficFlowLines.push(L.polyline(latLngs, {color, weight: 7, opacity: 0.95, pane: 'overlayPane'}).addTo(map));
-                        }
-                    });
-                    status.textContent = `Live traffic flow is available on ${segments.length} sampled route segment${segments.length === 1 ? '' : 's'}.`;
+                    status.textContent = 'Live traffic data is available near the current vehicle position.';
                     showFloatingToast('Road Traffic', status.textContent, 'success');
                 } else {
-                    const lookahead = data.lookaheadKm
-                        ? `Checked next ${data.lookaheadKm} road km (${data.sampledRoadPoints || 0} samples; TomTom target route ${data.routeDistanceKm || '—'} km). `
-                        : '';
-                    status.textContent = `${lookahead}${data.message || 'No live traffic coverage was returned for this road.'}`;
+                    status.textContent = data.message || 'Live traffic data is unavailable for this road section.';
                     showFloatingToast('Road Traffic', status.textContent, 'warning');
                 }
             })
             .catch(err => {
-                const message = err.name === 'AbortError'
-                    ? 'Traffic lookup timed out. Check the server connection and TomTom API availability.'
-                    : err.message;
+                const message = err.name === 'AbortError' ? 'Unable to retrieve traffic information. Please try again.' : 'Unable to retrieve traffic information. Please try again.';
                 console.error('Traffic flow fetch failed:', err);
                 if (status) status.textContent = message;
                 showFloatingToast('Road Traffic', message, 'warning');
             })
             .finally(() => {
                 clearTimeout(trafficTimeout);
+                if (trafficFlowRequest === requestController) trafficFlowRequest = null;
             });
     }
 
@@ -2312,6 +2307,8 @@
         vehicleState.speed = speed;
         vehicleState.heading = heading;
         vehicleState.hasFix = true;
+        const fixTime = extras.gpsTime ? new Date(extras.gpsTime).getTime() : null;
+        vehicleState.fixTime = Number.isFinite(fixTime) ? fixTime : null;
 
         if (vehicleState.marker) {
             vehicleState.marker.setLatLng([lat, lng]);
@@ -2454,7 +2451,8 @@
                                     ignition: isIgn,
                                     engine: params.engine_status ?? params.engine_power ?? params.engine ?? null,
                                     sats: params.sats ? `${params.sats} Sats` : 'Wialon Fix',
-                                    gpsFix: true
+                                    gpsFix: true,
+                                    gpsTime: (pos.t || lastMsg.t) ? new Date(Number(pos.t || lastMsg.t) * 1000).toISOString() : null
                                 }
                             };
                         }
@@ -2493,7 +2491,8 @@
                         updateVehiclePosition(data.latitude, data.longitude, data.speed_kmh, data.heading, {
                             ignition: data.ignition,
                             engine: data.engine,
-                            sats: 'Cellular Fix'
+                            sats: 'Cellular Fix',
+                            gpsTime: data.time || data.last_received_at || null
                         });
                     }
                 })

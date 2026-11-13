@@ -60,15 +60,20 @@ class TrafficService
                     ]);
                 }
             });
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('TrafficService fetchFlow exception: ' . $e->getMessage());
-            return ['available' => false, 'message' => 'Traffic provider is unreachable.'];
+            return ['available' => false, 'code' => 'provider_unavailable', 'message' => 'Unable to retrieve traffic information. Please try again.'];
         }
 
         $segments = [];
         $failures = [];
         foreach ($responses as $index => $response) {
             [$lat, $lon] = $sampledPoints[(int) $index];
+            if ($response instanceof \Throwable) {
+                $failures[] = ['status' => null, 'message' => null];
+                Log::warning('TrafficService flow request failed', ['error' => $response->getMessage()]);
+                continue;
+            }
             if ($response->successful()) {
                 $flow = $response->json()['flowSegmentData'] ?? null;
                 if ($flow) $segments[] = ['flowSegmentData' => $flow, 'samplePoint' => ['lat' => $lat, 'lon' => $lon]];
@@ -91,103 +96,32 @@ class TrafficService
                 'failure_statuses' => $failureSummary,
                 'provider_message' => $providerMessage,
             ]);
-            $detail = $providerMessage ? " Provider response: {$providerMessage}" : '';
-            return ['available' => false, 'message' => "TomTom returned no live traffic flow for {$sampleCount} sampled road points in this area.{$detail}"];
+            $status = collect($failures)->pluck('status')->first();
+            $code = !$failures ? 'no_coverage' : ($status === null
+                ? 'provider_unavailable'
+                : match ((int) $status) {
+                    401, 403 => 'authentication_error',
+                    429 => 'rate_limited',
+                    default => (str_contains(strtolower((string) $providerMessage), 'point too far') ? 'no_coverage' : 'provider_error'),
+                });
+            $message = match ($code) {
+                'no_coverage' => 'Live traffic data is unavailable for this road section.',
+                'authentication_error', 'rate_limited', 'provider_error', 'provider_unavailable' => 'Unable to retrieve traffic information. Please try again.',
+                default => 'Live traffic data is unavailable for this road section.',
+            };
+            return ['available' => false, 'code' => $code, 'httpStatus' => $status, 'message' => $message];
         }
         return ['available' => true, 'segments' => $segments];
     }
 
-    /** Route 100 road-kilometers ahead of the live fix, then sample flow on that route. */
-    public function fetchNext100KmFlow(float $lat, float $lon, float $heading): array
+    /** Check flow only at the current GPS fix; map-wide visualization belongs to flow tiles. */
+    public function fetchCurrentPointFlow(float $lat, float $lon, float $heading): array
     {
         if (!$this->apiKey) return ['available' => false, 'message' => 'TomTom API key is not configured.'];
-        if (abs($lat) > 90 || abs($lon) > 180 || $heading < 0 || $heading >= 360) {
-            return ['available' => false, 'message' => 'Live GPS position or course is invalid.'];
+        if (!is_finite($lat) || !is_finite($lon) || abs($lat) > 90 || abs($lon) > 180 || !is_finite($heading) || $heading < 0 || $heading >= 360) {
+            return ['available' => false, 'code' => 'invalid_coordinates', 'message' => 'Live GPS position or course is invalid.'];
         }
-
-        $bearing = deg2rad($heading);
-        $targetLat = $lat + (100 * cos($bearing) / 111.32);
-        $targetLon = $lon + (100 * sin($bearing) / (111.32 * max(0.05, cos(deg2rad($lat)))));
-        $locations = sprintf('%.6f,%.6f:%.6f,%.6f', $lat, $lon, $targetLat, $targetLon);
-
-        try {
-            $routeResponse = Http::connectTimeout(3)->timeout(8)->get("{$this->baseUrl}/routing/1/calculateRoute/{$locations}/json", [
-                'key' => $this->apiKey,
-                'travelMode' => 'car',
-                'routeType' => 'fastest',
-                'traffic' => 'true',
-                'computeTravelTimeFor' => 'all',
-                'vehicleHeading' => (int) round($heading),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('TrafficService forward route request failed: ' . $e->getMessage());
-            return ['available' => false, 'message' => 'TomTom could not calculate the next-road route.'];
-        }
-
-        $route = $routeResponse->json()['routes'][0] ?? null;
-        if (!$routeResponse->successful() || !$route) {
-            Log::warning('TrafficService forward route unavailable', [
-                'status' => $routeResponse->status(),
-                'provider_message' => data_get($routeResponse->json(), 'error.description')
-                    ?? data_get($routeResponse->json(), 'detailedError.message'),
-            ]);
-            return ['available' => false, 'message' => 'TomTom could not find a routed road 100 km ahead.'];
-        }
-
-        $roadPoints = $this->firstRoadKilometers($route['legs'][0]['points'] ?? [], 100);
-        if (count($roadPoints) < 2) {
-            return ['available' => false, 'message' => 'TomTom returned no usable road geometry for the next 100 km.'];
-        }
-
-        $flow = $this->fetchFlow($roadPoints, 4);
-        return $flow + [
-            'lookaheadKm' => 100,
-            'routeDistanceKm' => round(((float) data_get($route, 'summary.lengthInMeters', 0)) / 1000, 1),
-            'sampledRoadPoints' => min(4, count($roadPoints)),
-        ];
-    }
-
-    private function firstRoadKilometers(array $points, float $limitKm): array
-    {
-        $result = [];
-        $distance = 0.0;
-        $previous = null;
-        $limitMeters = $limitKm * 1000;
-
-        foreach ($points as $point) {
-            if (!isset($point['latitude'], $point['longitude'])) continue;
-            $current = [(float) $point['latitude'], (float) $point['longitude']];
-            if ($previous === null) {
-                $result[] = $current;
-                $previous = $current;
-                continue;
-            }
-
-            $segmentMeters = $this->distanceMeters($previous, $current);
-            if ($distance + $segmentMeters > $limitMeters) {
-                $fraction = $segmentMeters > 0 ? ($limitMeters - $distance) / $segmentMeters : 0;
-                $result[] = [
-                    $previous[0] + (($current[0] - $previous[0]) * $fraction),
-                    $previous[1] + (($current[1] - $previous[1]) * $fraction),
-                ];
-                break;
-            }
-
-            $result[] = $current;
-            $distance += $segmentMeters;
-            $previous = $current;
-        }
-        return $result;
-    }
-
-    private function distanceMeters(array $a, array $b): float
-    {
-        $lat1 = deg2rad($a[0]);
-        $lat2 = deg2rad($b[0]);
-        $deltaLat = $lat2 - $lat1;
-        $deltaLon = deg2rad($b[1] - $a[1]);
-        $h = sin($deltaLat / 2) ** 2 + cos($lat1) * cos($lat2) * (sin($deltaLon / 2) ** 2);
-        return 6371000 * 2 * atan2(sqrt($h), sqrt(max(0, 1 - $h)));
+        return $this->fetchFlow([[$lat, $lon]], 1);
     }
 
     /**

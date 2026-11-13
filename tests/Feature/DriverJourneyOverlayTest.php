@@ -21,7 +21,7 @@ class DriverJourneyOverlayTest extends TestCase
 
         $fakePng = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
         Http::fake([
-            'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/*' => Http::response($fakePng, 200, ['Content-Type' => 'image/png'])
+            'https://api.tomtom.com/traffic/map/4/tile/flow/relative/*' => Http::response($fakePng, 200, ['Content-Type' => 'image/png'])
         ]);
 
         $response = $this->get('/driver-panel/tile/traffic/10/500/300.png');
@@ -35,10 +35,78 @@ class DriverJourneyOverlayTest extends TestCase
     {
         Config::set('services.tomtom.key', null);
 
-        $response = $this->get('/driver-panel/tile/traffic/10/500/300.png');
+        $response = $this->get('/driver-panel/tile/traffic/10/501/300.png');
 
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'image/png');
+    }
+
+    public function test_traffic_tile_does_not_fall_back_to_another_provider(): void
+    {
+        Config::set('services.tomtom.key', 'test-tomtom-key');
+        Http::fake(['*' => Http::response('', 503)]);
+
+        $response = $this->get('/driver-panel/tile/traffic/10/502/300.png');
+
+        $response->assertStatus(200);
+        $response->assertHeader('Content-Type', 'image/png');
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/traffic/map/4/tile/flow/relative/10/502/300.png')
+            && str_contains($request->url(), 'key=test-tomtom-key'));
+    }
+
+    public function test_traffic_flow_checks_only_the_current_fix_and_reports_uncovered_roads(): void
+    {
+        Config::set('services.tomtom.key', 'test-tomtom-key');
+        Config::set('services.tomtom.ttl', 0);
+        Http::fake([
+            'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative/18/json*' => Http::response([
+                'detailedError' => ['message' => 'Point too far from nearest existing segment.'],
+            ], 400),
+        ]);
+
+        $response = $this->postJson('/driver-panel/journey/traffic/flow', [
+            'lat' => 33.6844,
+            'lon' => 73.0479,
+            'heading' => 90,
+        ]);
+
+        $response->assertOk()->assertJson([
+            'available' => false,
+            'code' => 'no_coverage',
+            'message' => 'Live traffic data is unavailable for this road section.',
+        ]);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'point=33.6844%2C73.0479')
+            && !str_contains($request->url(), 'calculateRoute'));
+    }
+
+    public function test_traffic_flow_rejects_invalid_coordinate_ranges(): void
+    {
+        Config::set('services.tomtom.key', 'test-tomtom-key');
+
+        $this->postJson('/driver-panel/journey/traffic/flow', [
+            'lat' => 91,
+            'lon' => 73.0479,
+            'heading' => 90,
+        ])->assertStatus(422)->assertJson(['available' => false, 'message' => 'Live GPS position or course is invalid.']);
+    }
+
+    public function test_traffic_flow_handles_connection_failures_without_throwing(): void
+    {
+        Config::set('services.tomtom.key', 'test-tomtom-key');
+        Config::set('services.tomtom.ttl', 0);
+        Http::fake(['*' => Http::failedConnection('Connection timed out')]);
+
+        $this->postJson('/driver-panel/journey/traffic/flow', [
+            'lat' => 8.1955,
+            'lon' => -12.6561,
+            'heading' => 0,
+        ])->assertOk()->assertJson([
+            'available' => false,
+            'code' => 'provider_unavailable',
+            'message' => 'Unable to retrieve traffic information. Please try again.',
+        ]);
     }
 
     public function test_weather_tile_proxy_returns_png_response(): void

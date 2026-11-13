@@ -34,11 +34,11 @@ class DriverJourneyController extends Controller
         $z = (int)$z;
         $x = (int)$x;
         $y = (int)$y;
-        if ($z < 0 || $z > 22 || $x < 0 || $y < 0) {
+        if ($z < 0 || $z > 22 || $x < 0 || $y < 0 || $x >= (1 << $z) || $y >= (1 << $z)) {
             return response(base64_decode(self::TRANSPARENT_PNG), 200)->header('Content-Type', 'image/png');
         }
 
-        $cacheKey = "tile_traffic_{$z}_{$x}_{$y}";
+        $cacheKey = "tomtom_tile_traffic_v2_{$z}_{$x}_{$y}";
         $ttl = (int) config('services.tomtom.tile_ttl', 60);
 
         // Encode as base64 to prevent MySQL 1366 binary character set exception when using database cache driver
@@ -48,10 +48,9 @@ class DriverJourneyController extends Controller
             // 1. Try TomTom traffic flow tile
             if ($key) {
                 try {
-                    $url = rtrim(config('services.tomtom.base_url', 'https://api.tomtom.com'), '/') . "/traffic/map/4/tile/flow/relative/{$z}/{$x}/{$y}.png?key={$key}";
-                    $response = Http::timeout(5)->get($url);
-                    // TomTom returns exactly 1241 bytes for blank/uncovered tiles (e.g. Pakistan)
-                    if ($response->successful() && strlen($response->body()) > 1500) {
+                    $url = rtrim(config('services.tomtom.base_url', 'https://api.tomtom.com'), '/') . "/traffic/map/4/tile/flow/relative/{$z}/{$x}/{$y}.png";
+                    $response = Http::connectTimeout(3)->timeout(6)->get($url, ['key' => $key]);
+                    if ($response->successful() && str_starts_with($response->header('Content-Type', ''), 'image/')) {
                         return base64_encode($response->body());
                     }
                     if (!$response->successful()) {
@@ -60,18 +59,6 @@ class DriverJourneyController extends Controller
                 } catch (\Exception $e) {
                     Log::warning('TomTom traffic tile exception: ' . $e->getMessage());
                 }
-            }
-
-            // 2. High-precision live road traffic overlay for global coverage (including Pakistan)
-            try {
-                $gtUrl = "https://mt0.google.com/vt?lyrs=h@159000000,traffic|seconds_into_week:-1&style=15&x={$x}&y={$y}&z={$z}";
-                $gResponse = Http::timeout(5)->get($gtUrl);
-                if ($gResponse->successful() && strlen($gResponse->body()) > 500) {
-                    return base64_encode($gResponse->body());
-                }
-                Log::warning('Traffic tile fallback unavailable', ['status' => $gResponse->status(), 'z' => $z, 'x' => $x, 'y' => $y]);
-            } catch (\Exception $e) {
-                Log::warning('Road traffic overlay exception: ' . $e->getMessage());
             }
 
             return null;
@@ -177,13 +164,12 @@ class DriverJourneyController extends Controller
                 return response()->json(['available' => false, 'message' => 'Live GPS position or course is invalid.'], 422);
             }
 
-            $cacheKey = 'traffic_forward_100_' . md5(json_encode([
-                round((float) $lat, 3),
-                round((float) $lon, 3),
-                (int) (round((float) $heading / 15) * 15) % 360,
+            $cacheKey = 'traffic_current_point_v2_' . md5(json_encode([
+                round((float) $lat, 5),
+                round((float) $lon, 5),
             ]));
             $data = $this->rememberSafely($cacheKey, config('services.tomtom.ttl', 300), function () use ($lat, $lon, $heading) {
-                return $this->traffic->fetchNext100KmFlow((float) $lat, (float) $lon, (float) $heading);
+                return $this->traffic->fetchCurrentPointFlow((float) $lat, (float) $lon, (float) $heading);
             });
             return response()->json($data);
         }
