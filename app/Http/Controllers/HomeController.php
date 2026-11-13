@@ -6,6 +6,8 @@ use App\Models\DriverMate;
 use App\Models\Vehicle;
 use App\Models\VehicleMaintenance;
 use App\Models\Waybill;
+use App\Models\DriverEldLog;
+use App\Models\WaybillDriverPlan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
@@ -244,6 +246,33 @@ class HomeController extends Controller
 
     public function logout()
     {
+        $driver = Auth::user()?->driverDetail;
+        if ($driver) {
+            $plan = WaybillDriverPlan::where('driver_id', $driver->id)->where('status', 'active')->latest()->first();
+            if ($plan) {
+                $latestDutyEvent = DriverEldLog::where('driver_id', $driver->id)
+                    ->where('waybill_id', $plan->waybill_id)
+                    ->whereIn('event_type', ['start_duty', 'resume_duty', 'pause_duty', 'end_duty'])
+                    ->latest('created_at')->first();
+
+                // Plan status has no `paused` enum value, so an already-paused
+                // plan can still be `active`. Do not count logged-out time again.
+                if (in_array($latestDutyEvent?->event_type, ['pause_duty', 'end_duty'], true)) {
+                    $plan->update(['actual_driven_seconds' => (int) $latestDutyEvent->elapsed_seconds]);
+                } else {
+                    $last = DriverEldLog::where('driver_id', $driver->id)->where('waybill_id', $plan->waybill_id)
+                        ->whereIn('event_type', ['start_duty', 'resume_duty'])->latest()->first();
+                    $elapsed = $last ? ((int) $last->elapsed_seconds + now()->diffInSeconds($last->created_at, true)) : (int) $plan->actual_driven_seconds;
+                    // `paused` is an ELD event state, not a valid waybill plan status.
+                    $plan->update(['actual_driven_seconds' => $elapsed]);
+                    DriverEldLog::create([
+                        'driver_id' => $driver->id, 'waybill_id' => $plan->waybill_id,
+                        'event_type' => 'pause_duty', 'status' => 'on_duty', 'elapsed_seconds' => $elapsed,
+                        'notes' => 'Duty timer saved and paused when driver logged out.',
+                    ]);
+                }
+            }
+        }
         Auth::logout();
         return redirect()->route('login');
     }

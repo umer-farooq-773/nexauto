@@ -198,6 +198,7 @@ Route::middleware(['auth'])->prefix('driver-panel')->as('driver.')->group(functi
     Route::get('/logs', [\App\Http\Controllers\DriverPortalController::class, 'getLogs'])->name('get_logs');
     Route::get('/live-telematics', [\App\Http\Controllers\DriverPortalController::class, 'liveTelematics'])->name('live_telematics');
     Route::get('/sync-state', [\App\Http\Controllers\DriverPortalController::class, 'syncState'])->name('sync_state');
+    Route::post('/logout-duty', [\App\Http\Controllers\DriverPortalController::class, 'logoutDuty'])->name('logout_duty');
     Route::get('/history', [\App\Http\Controllers\DriverPortalController::class, 'history'])->name('history');
     Route::get('/history-logs', [\App\Http\Controllers\DriverPortalController::class, 'historyLogs'])->name('history_logs');
 

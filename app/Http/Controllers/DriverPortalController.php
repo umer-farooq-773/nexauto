@@ -24,6 +24,15 @@ class DriverPortalController extends Controller
         $this->middleware('auth');
     }
 
+    private function authorizeDriverAction(DriverDetail $driver): void
+    {
+        $user = auth()->user();
+        if ($user->driverDetail?->id !== $driver->id
+            && !$user->hasAnyRole([Constants::SUPERADMIN, Constants::ADMIN])) {
+            abort(403, 'You are not authorized to update this driver duty timer.');
+        }
+    }
+
     /**
      * Single-screen PWA Driver ELD & Navigation Portal
      */
@@ -123,6 +132,38 @@ class DriverPortalController extends Controller
             $plannedSeconds = 14400; // Fallback to 4 hours default shift
         }
 
+        // Resolve completion before applying login state recovery below.
+        $statusValue = $waybill?->status?->value !== null ? (int) $waybill->status->value : null;
+        $isDelivered = $statusValue === 3;
+        $isWaybillCompleted = in_array($statusValue, [3, 4, 6], true) || $planStatus === 'completed';
+
+        // Recover state for this driver's current waybill. A driver may have
+        // earlier events on another waybill; those must not block auto-start on
+        // a newly assigned trip or leak the previous trip's elapsed time.
+        $latestDutyEvent = DriverEldLog::where('driver_id', $driver->id)
+            ->when($waybill, fn ($q) => $q->where('waybill_id', $waybill->id))
+            ->whereIn('event_type', ['start_duty', 'resume_duty', 'pause_duty', 'end_duty'])
+            ->latest('created_at')->first();
+        if ($latestDutyEvent) {
+            if (in_array($latestDutyEvent->event_type, ['start_duty', 'resume_duty'], true)) {
+                $actualDrivenSeconds = (int) $latestDutyEvent->elapsed_seconds + now()->diffInSeconds($latestDutyEvent->created_at, true);
+                $planStatus = 'active';
+            } elseif ($latestDutyEvent->event_type === 'pause_duty') {
+                $actualDrivenSeconds = (int) $latestDutyEvent->elapsed_seconds;
+                $planStatus = 'paused';
+            } else {
+                $actualDrivenSeconds = (int) $latestDutyEvent->elapsed_seconds;
+                $planStatus = 'completed';
+            }
+        }
+
+        // Start automatically the first time this assigned driver opens the
+        // portal for this waybill. Prior trip history is intentionally ignored.
+        if (!$latestDutyEvent && $user->driverDetail?->id === $driver->id && !$isWaybillCompleted) {
+            $this->recordDutyStart($driver, $waybill, $currentPlan);
+            $planStatus = 'active';
+        }
+
         $fullName = trim($driver->full_name ?? '');
         $nameParts = preg_split('/\s+/', $fullName);
         if (count($nameParts) >= 2 && !empty($nameParts[1])) {
@@ -135,10 +176,6 @@ class DriverPortalController extends Controller
         $vehicle = $waybill?->vehicle ?? $driver->vehicles->first();
 
         // Check if waybill or plan is completed/delivered
-        $statusValue = $waybill?->status?->value !== null ? (int) $waybill->status->value : null;
-        $isDelivered = $statusValue === 3;
-        $isWaybillCompleted = in_array($statusValue, [3, 4, 6], true) || $planStatus === 'completed';
-
         // Calculate initial remaining seconds
         $remainingSeconds = max(0, $plannedSeconds - $actualDrivenSeconds);
         $isOvertime = $actualDrivenSeconds > $plannedSeconds;
@@ -197,6 +234,7 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
         $vehicleId = null;
 
@@ -252,6 +290,22 @@ class DriverPortalController extends Controller
         ]);
     }
 
+    private function recordDutyStart(DriverDetail $driver, ?Waybill $waybill, ?WaybillDriverPlan $plan): void
+    {
+        if ($plan) {
+            $plan->update(['status' => 'active', 'started_at' => $plan->started_at ?? now()]);
+        }
+        DriverEldLog::create([
+            'driver_id' => $driver->id,
+            'waybill_id' => $waybill?->id,
+            'vehicle_id' => $waybill?->vehicle_id,
+            'event_type' => 'start_duty',
+            'status' => 'driving',
+            'elapsed_seconds' => 0,
+            'notes' => 'Duty started automatically when driver logged into the ELD portal.',
+        ]);
+    }
+
     /**
      * Pause duty / Take a rest break
      */
@@ -266,6 +320,7 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
         $elapsed = (int) $request->input('elapsed_seconds', 0);
 
@@ -274,7 +329,7 @@ class DriverPortalController extends Controller
                 ->where('driver_id', $driver->id)
                 ->first();
 
-            if ($plan && $elapsed > 0) {
+            if ($plan) {
                 $plan->update(['actual_driven_seconds' => $elapsed]);
             }
         }
@@ -310,7 +365,9 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
+        $elapsed = 0;
 
         if ($waybillId) {
             $plan = WaybillDriverPlan::where('waybill_id', $waybillId)
@@ -319,6 +376,7 @@ class DriverPortalController extends Controller
 
             if ($plan) {
                 $plan->update(['status' => 'active']);
+                $elapsed = (int) $plan->actual_driven_seconds;
             }
         }
 
@@ -327,6 +385,7 @@ class DriverPortalController extends Controller
             'waybill_id'  => $waybillId,
             'event_type'  => 'resume_duty',
             'status'      => 'driving',
+            'elapsed_seconds' => $elapsed,
             'latitude'    => $request->input('latitude'),
             'longitude'   => $request->input('longitude'),
             'notes'       => 'Driver resumed duty timer.',
@@ -353,6 +412,7 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
         $elapsed = (int) $request->input('elapsed_seconds', 0);
         $nextDriver = null;
@@ -421,6 +481,7 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
         $elapsed = (int) $request->input('elapsed_seconds');
         $planned = (int) $request->input('planned_seconds');
@@ -519,6 +580,7 @@ class DriverPortalController extends Controller
         ]);
 
         $driver = DriverDetail::findOrFail($request->input('driver_id'));
+        $this->authorizeDriverAction($driver);
         $waybillId = $request->input('waybill_id');
         $speed = (float) $request->input('speed_kmh', 0);
 
@@ -787,6 +849,40 @@ class DriverPortalController extends Controller
                 'fleet_no' => $waybill->vehicle->fleet_no ?? $waybill->vehicle->truck_no,
             ] : null,
         ]);
+    }
+
+    /** Save the driver's current duty state when they log out. */
+    public function logoutDuty(): JsonResponse
+    {
+        $driver = auth()->user()->driverDetail;
+        if (!$driver) {
+            return response()->json(['success' => true]);
+        }
+
+        $plan = $driver->driverPlans()->where('status', 'active')->latest()->first();
+        if ($plan) {
+            $latestDutyEvent = DriverEldLog::where('driver_id', $driver->id)
+                ->where('waybill_id', $plan->waybill_id)
+                ->whereIn('event_type', ['start_duty', 'resume_duty', 'pause_duty', 'end_duty'])
+                ->latest('created_at')->first();
+            if (in_array($latestDutyEvent?->event_type, ['pause_duty', 'end_duty'], true)) {
+                $plan->update(['actual_driven_seconds' => (int) $latestDutyEvent->elapsed_seconds]);
+                return response()->json(['success' => true]);
+            }
+
+            $elapsed = (int) $plan->actual_driven_seconds;
+            $last = DriverEldLog::where('driver_id', $driver->id)->where('waybill_id', $plan->waybill_id)
+                ->whereIn('event_type', ['start_duty', 'resume_duty'])->latest()->first();
+            if ($last) $elapsed = (int) $last->elapsed_seconds + now()->diffInSeconds($last->created_at, true);
+            // `paused` belongs to the ELD event log; the plan enum has no paused value.
+            $plan->update(['actual_driven_seconds' => $elapsed]);
+            DriverEldLog::create([
+                'driver_id' => $driver->id, 'waybill_id' => $plan->waybill_id,
+                'event_type' => 'pause_duty', 'status' => 'on_duty', 'elapsed_seconds' => $elapsed,
+                'notes' => 'Duty timer saved and paused when driver logged out.',
+            ]);
+        }
+        return response()->json(['success' => true]);
     }
 
     /**

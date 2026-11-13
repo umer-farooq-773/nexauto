@@ -929,7 +929,7 @@
                 </div>
 
                 {{-- Action Buttons (HIDDEN when waybill is delivered/completed) --}}
-                <button id="btn-start-duty" class="btn btn-duty-action btn-duty-start {{ ($planStatus === 'active' || $isWaybillCompleted) ? 'd-none' : '' }}">
+                <button id="btn-start-duty" class="btn btn-duty-action btn-duty-start {{ (in_array($planStatus, ['active', 'paused'], true) || $isWaybillCompleted) ? 'd-none' : '' }}">
                     <i class="ri-play-circle-line fs-5"></i>
                     <span>START DUTY</span>
                 </button>
@@ -939,12 +939,12 @@
                     <span>PAUSE REST</span>
                 </button>
 
-                <button id="btn-resume-duty" class="btn btn-duty-action btn-duty-resume d-none">
+                <button id="btn-resume-duty" class="btn btn-duty-action btn-duty-resume {{ ($planStatus === 'paused' && !$isWaybillCompleted) ? '' : 'd-none' }}">
                     <i class="ri-play-line fs-5"></i>
                     <span>RESUME</span>
                 </button>
 
-                <button id="btn-end-duty" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold {{ ($planStatus === 'active' && !$isWaybillCompleted) ? '' : 'd-none' }}">
+                <button id="btn-end-duty" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 fw-semibold {{ (in_array($planStatus, ['active', 'paused'], true) && !$isWaybillCompleted) ? '' : 'd-none' }}">
                     <i class="ri-stop-circle-line me-1"></i> End Shift
                 </button>
 
@@ -1458,6 +1458,7 @@
         wialonHost:      @json($wialonHost),
         wialonToken:     @json($wialonToken),
         plannedSeconds:  {{ (int) $plannedSeconds }},
+        dutyStatus:      @json($planStatus),
         originLat:       {{ $waybill?->origin_lat ? (float)$waybill->origin_lat : 'null' }},
         originLng:       {{ $waybill?->origin_lng ? (float)$waybill->origin_lng : 'null' }},
         destLat:         {{ $waybill?->destination_lat ? (float)$waybill->destination_lat : 'null' }},
@@ -1688,6 +1689,7 @@
 
         timerState.intervalId = setInterval(function() {
             timerState.elapsedSeconds++;
+            saveTimerCheckpoint();
             updateTimerUI();
 
             // Periodic sync with server every 15 seconds
@@ -1699,6 +1701,29 @@
         setDutyStatus('active');
         dismissMovementAlert();
     }
+
+    const timerStorageKey = `nexauto-duty-${CONFIG.driverId}-${CONFIG.waybillId || 'general'}`;
+    function saveTimerCheckpoint() {
+        try {
+            localStorage.setItem(timerStorageKey, JSON.stringify({
+                status: timerState.isRunning ? 'active' : 'paused',
+                elapsedSeconds: timerState.elapsedSeconds,
+                savedAt: Date.now()
+            }));
+        } catch (e) {}
+    }
+
+    // A browser logout changes the shared auth session for every tab. Stop any
+    // stale portal timers in sibling tabs so they cannot keep syncing under a
+    // different driver's next login.
+    window.addEventListener('storage', function(event) {
+        if (event.key !== 'nexauto-portal-logout') return;
+        if (timerState.intervalId) clearInterval(timerState.intervalId);
+        timerState.intervalId = null;
+        timerState.isRunning = false;
+        saveTimerCheckpoint();
+        setDutyStatus('paused');
+    });
 
     function pauseTimerTick() {
         if (timerState.intervalId) clearInterval(timerState.intervalId);
@@ -2713,6 +2738,11 @@
             });
         });
 
+        document.querySelector('form[action="{{ route('logout') }}"]')?.addEventListener('submit', function() {
+            saveTimerCheckpoint();
+            try { localStorage.setItem('nexauto-portal-logout', String(Date.now())); } catch (e) {}
+        });
+
         // Add Remark Form Submit
         document.getElementById('add-remark-form')?.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -3010,7 +3040,7 @@
 
         if (timerState.isRunning) {
             startTimerTick();
-        } else if (!CONFIG.isWaybillCompleted && !CONFIG.isDelivered) {
+        } else if (!CONFIG.isWaybillCompleted && !CONFIG.isDelivered && CONFIG.dutyStatus !== 'paused') {
             // Auto-open modal on fresh login only if not completed/delivered, and not already dismissed in this session
             const dismissedKey = 'startModalDismissed_' + (CONFIG.waybillId || 'general');
             if (!sessionStorage.getItem(dismissedKey)) {
